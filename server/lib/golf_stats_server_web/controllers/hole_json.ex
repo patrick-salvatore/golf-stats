@@ -1,0 +1,29 @@
+defmodule GolfStatsServerWeb.HoleJSON do
+  alias GolfStatsServer.Stats.Hole
+
+  @doc """
+  Renders a list of holes.
+  """
+  def index(%{holes: holes}) do
+    %{data: for(hole <- holes, do: data(hole))}
+  end
+
+  @doc """
+  Renders a single hole.
+  """
+  def show(%{hole: hole}) do
+    %{data: data(hole)}
+  end
+
+  defp data(%Hole{} = hole) do
+    %{
+      id: hole.id,
+      hole_number: hole.hole_number,
+      par: hole.par,
+      score: hole.score,
+      fairway_hit: hole.fairway_hit,
+      gir: hole.gir,
+      putts: hole.putts
+    }
+  end
+end
