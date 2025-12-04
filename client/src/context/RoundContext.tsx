@@ -167,16 +167,15 @@ export function RoundProvider(props: { children: JSX.Element }) {
         });
 
         refetch();
-        alert('Round synced successfully!');
+
         window.location.href = '/'; 
       } else {
         const errorText = await response.text();
         console.error("Sync Error Details:", errorText);
-        alert('Failed to sync. Please check logs.');
+        throw errorText;
       }
     } catch (e) {
       console.error(e);
-      alert('Error syncing round - check connection');
     }
   };
 

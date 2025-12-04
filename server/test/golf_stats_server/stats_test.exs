@@ -4,7 +4,7 @@ defmodule GolfStatsServer.StatsTest do
   alias GolfStatsServer.Stats
 
   describe "rounds" do
-    alias GolfStatsServer.Stats.Round
+    alias GolfStatsServer.Round
 
     import GolfStatsServer.StatsFixtures
 
@@ -62,7 +62,7 @@ defmodule GolfStatsServer.StatsTest do
   end
 
   describe "holes" do
-    alias GolfStatsServer.Stats.Hole
+    alias GolfStatsServer.Hole
 
     import GolfStatsServer.StatsFixtures
 

@@ -3,7 +3,7 @@ defmodule GolfStatsServerWeb.RoundControllerTest do
 
   import GolfStatsServer.StatsFixtures
 
-  alias GolfStatsServer.Stats.Round
+  alias GolfStatsServer.Round
 
   @create_attrs %{
     date: ~D[2025-12-03],

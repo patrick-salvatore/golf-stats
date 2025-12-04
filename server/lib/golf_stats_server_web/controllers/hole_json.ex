@@ -1,5 +1,5 @@
 defmodule GolfStatsServerWeb.HoleJSON do
-  alias GolfStatsServer.Stats.Hole
+  alias GolfStatsServer.Hole
 
   @doc """
   Renders a list of holes.

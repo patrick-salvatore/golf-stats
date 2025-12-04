@@ -3,7 +3,7 @@ defmodule GolfStatsServerWeb.HoleControllerTest do
 
   import GolfStatsServer.StatsFixtures
 
-  alias GolfStatsServer.Stats.Hole
+  alias GolfStatsServer.Hole
 
   @create_attrs %{
     hole_number: 42,

@@ -2,7 +2,7 @@ defmodule GolfStatsServerWeb.HoleController do
   use GolfStatsServerWeb, :controller
 
   alias GolfStatsServer.Stats
-  alias GolfStatsServer.Stats.Hole
+  alias GolfStatsServer.Hole
 
   action_fallback GolfStatsServerWeb.FallbackController
 

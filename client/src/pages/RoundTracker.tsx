@@ -92,10 +92,6 @@ export default function RoundTracker() {
     }
   });
 
-  createEffect(() => {
-    console.log(loading());
-  });
-
   const startRound = async () => {
     if (!courseName()) return;
 

@@ -6,8 +6,8 @@ defmodule GolfStatsServer.Stats do
   import Ecto.Query, warn: false
   alias GolfStatsServer.Repo
 
-  alias GolfStatsServer.Stats.Round
-  alias GolfStatsServer.Stats.Hole
+  alias GolfStatsServer.Round
+  alias GolfStatsServer.Hole
 
   @doc """
   Returns the list of rounds.
@@ -106,8 +106,6 @@ defmodule GolfStatsServer.Stats do
   def change_round(%Round{} = round, attrs \\ %{}) do
     Round.changeset(round, attrs)
   end
-
-  alias GolfStatsServer.Stats.Hole
 
   @doc """
   Returns the list of holes.

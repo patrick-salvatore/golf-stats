@@ -1,4 +1,4 @@
-defmodule GolfStatsServer.Stats.Round do
+defmodule GolfStatsServer.Round do
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -8,7 +8,7 @@ defmodule GolfStatsServer.Stats.Round do
     field(:total_score, :integer)
     field(:created_at, :utc_datetime)
     field(:ended_at, :utc_datetime)
-    has_many(:holes, GolfStatsServer.Stats.Hole)
+    has_many(:holes, GolfStatsServer.Hole)
 
     timestamps(type: :utc_datetime)
   end
@@ -18,6 +18,6 @@ defmodule GolfStatsServer.Stats.Round do
     round
     |> cast(attrs, [:course_name, :date, :total_score, :created_at, :ended_at])
     |> validate_required([:course_name, :date, :total_score])
-    |> cast_assoc(:holes, with: &GolfStatsServer.Stats.Hole.changeset/2)
+    |> cast_assoc(:holes, with: &GolfStatsServer.Hole.changeset/2)
   end
 end

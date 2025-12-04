@@ -1,4 +1,4 @@
-defmodule GolfStatsServer.Stats.Hole do
+defmodule GolfStatsServer.Hole do
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -18,7 +18,7 @@ defmodule GolfStatsServer.Stats.Hole do
     field(:greenside_bunker, :boolean, default: false)
     field(:proximity_to_hole, :integer)
 
-    belongs_to(:round, GolfStatsServer.Stats.Round)
+    belongs_to(:round, GolfStatsServer.Round)
 
     timestamps(type: :utc_datetime)
   end

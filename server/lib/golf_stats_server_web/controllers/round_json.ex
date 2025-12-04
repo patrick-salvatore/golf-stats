@@ -1,5 +1,5 @@
 defmodule GolfStatsServerWeb.RoundJSON do
-  alias GolfStatsServer.Stats.Round
+  alias GolfStatsServer.Round
 
   @doc """
   Renders a list of rounds.
