@@ -18,7 +18,7 @@ export default function ActiveRoundBanner() {
                 </span>
             </div>
             <div class="space-y-2">
-                <For each={activeRounds()}>
+                <For each={[activeRounds()[0]]}>
                     {(round) => (
                         <div class="flex justify-between items-center">
                             <div>

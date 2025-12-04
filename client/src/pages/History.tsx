@@ -8,13 +8,13 @@ const fetchHistory = async (page: number) => {
   const offset = (page - 1) * ITEMS_PER_PAGE;
   
   const count = await db.rounds
-    .filter(r => r.completed === 1)
+    .filter(r => r.synced === 1)
     .count();
     
   const rounds = await db.rounds
     .orderBy('date')
     .reverse()
-    .filter(r => r.completed === 1)
+    .filter(r => r.synced === 1)
     .offset(offset)
     .limit(ITEMS_PER_PAGE)
     .toArray();

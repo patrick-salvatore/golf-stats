@@ -20,7 +20,9 @@ defmodule GolfStatsServerWeb.RoundJSON do
       id: round.id,
       course_name: round.course_name,
       date: round.date,
-      total_score: round.total_score
+      total_score: round.total_score,
+      created_at: round.created_at,
+      ended_at: round.ended_at
     }
 
     if Ecto.assoc_loaded?(round.holes) do
@@ -38,7 +40,12 @@ defmodule GolfStatsServerWeb.RoundJSON do
       score: hole.score,
       fairway_hit: hole.fairway_hit,
       gir: hole.gir,
-      putts: hole.putts
+      putts: hole.putts,
+      fairway_status: hole.fairway_status,
+      gir_status: hole.gir_status,
+      fairway_bunker: hole.fairway_bunker,
+      greenside_bunker: hole.greenside_bunker,
+      proximity_to_hole: hole.proximity_to_hole
     }
   end
 end
