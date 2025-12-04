@@ -2,9 +2,9 @@
   "name": "golf-stats",
   "version": "1.0.0",
   "scripts": {
-    "install:all": "cd client && npm install && cd ../server && mix deps.get",
-    "dev:client": "cd client && npm run dev",
+    "install:all": "cd client && pnpm install && cd ../server && mix deps.get",
+    "dev:client": "cd client && pnpm run dev",
     "dev:server": "cd server && mix phx.server",
-    "dev": "npm run dev:server & npm run dev:client"
+    "dev": "pnpm run dev:server & pnpm run dev:client"
   }
 }

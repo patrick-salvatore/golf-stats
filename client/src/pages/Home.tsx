@@ -1,4 +1,4 @@
-import { createSignal, createResource, For, Show } from "solid-js";
+import { createResource, For, Show } from "solid-js";
 import { A } from "@solidjs/router";
 import { db } from "../db";
 

@@ -1,0 +1,26 @@
+services:
+  server:
+    build:
+      context: ./server
+    environment:
+      - DATABASE_PATH=/data/golf.db
+      - SECRET_KEY_BASE=change_me_in_prod_generated_secret_key_base_123456789
+      - PHX_HOST=localhost
+      - PORT=4000
+    volumes:
+      - golf_data:/data
+    ports:
+      - "4000:4000"
+
+  client:
+    build:
+      context: ./client
+    environment:
+      - API_URL=http://server:4000
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+
+volumes:
+  golf_data:

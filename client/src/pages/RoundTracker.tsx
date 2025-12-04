@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { db, type Hole } from "../db";
 
@@ -58,7 +58,7 @@ export default function RoundTracker() {
       synced: 0
     });
 
-    const holesWithRoundId = holes().map(h => ({ ...h, roundId }));
+    const holesWithRoundId = holes().map(h => ({ ...h, roundId: roundId as number }));
     await db.holes.bulkAdd(holesWithRoundId);
 
     navigate('/');

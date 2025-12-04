@@ -1,0 +1,43 @@
+# fly.toml app configuration file generated for golf-stats-api
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = "golf-stats-api" # TODO: Update this to your unique backend app name
+primary_region = "ewr" # Update to your preferred region (e.g. ord, lhr, etc)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PHX_HOST = "golf-stats-api.internal" # Update to match your app name + .internal
+  PORT = "4000"
+  DATABASE_PATH = "/data/golf.db"
+
+[mounts]
+  source = "golf_data"
+  destination = "/data"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 4000
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+  
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "1s"
