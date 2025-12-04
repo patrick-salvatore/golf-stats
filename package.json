@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "install:all": "cd client && pnpm install && cd ../server && mix deps.get",
+    "install:client": "cd client && pnpm install",
     "dev:client": "cd client && pnpm run dev",
     "dev:server": "cd server && mix phx.server",
     "dev": "pnpm run dev:server & pnpm run dev:client"

@@ -6,6 +6,7 @@ interface Round {
   date: string;
   totalScore: number;
   synced: number; // 0 = false, 1 = true
+  completed: number; // 0 = active, 1 = completed
 }
 
 interface Hole {
@@ -24,9 +25,13 @@ const db = new Dexie('GolfStatsDB') as Dexie & {
   holes: EntityTable<Hole, 'id'>;
 };
 
-db.version(1).stores({
-  rounds: '++id, date, synced',
+db.version(2).stores({
+  rounds: '++id, date, synced, completed',
   holes: '++id, roundId, holeNumber' // compound index might be good but simple is fine
+}).upgrade(tx => {
+  return tx.table('rounds').toCollection().modify(round => {
+    if (round.completed === undefined) round.completed = 1; // Assume existing rounds are completed
+  });
 });
 
 export type { Round, Hole };

@@ -9,5 +9,6 @@ defmodule GolfStatsServerWeb.Router do
     pipe_through(:api)
 
     resources("/rounds", RoundController, except: [:new, :edit])
+    resources("/holes", HoleController, except: [:new, :edit])
   end
 end
