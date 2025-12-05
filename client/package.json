@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare": "husky"
   },
   "dependencies": {
     "@solidjs/router": "^0.15.4",
@@ -16,11 +17,17 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "autoprefixer": "^10.4.22",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "postcss": "^8.5.6",
+    "prettier": "3.7.4",
     "tailwindcss": "^3.4.1",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
     "vite-plugin-pwa": "^1.2.0",
     "vite-plugin-solid": "^2.11.10"
+  },
+  "lint-staged": {
+    "**/*": "prettier --write --ignore-unknown"
   }
 }

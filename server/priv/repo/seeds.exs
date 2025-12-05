@@ -1,9 +1,45 @@
 alias GolfStatsServer.Repo
-alias GolfStatsServer.Stats.{Round, Hole}
+alias GolfStatsServer.{Round, Hole}
+alias GolfStatsServer.Bag.Club
 
 # Clear existing data
 Repo.delete_all(Hole)
 Repo.delete_all(Round)
+Repo.delete_all(Club)
+
+# Create Clubs
+clubs_data = [
+  {"Driver", "driver"},
+  {"3 Wood", "wood"},
+  {"5 Wood", "wood"},
+  {"3 Hybrid", "hybrid"},
+  {"4 Iron", "iron"},
+  {"5 Iron", "iron"},
+  {"6 Iron", "iron"},
+  {"7 Iron", "iron"},
+  {"8 Iron", "iron"},
+  {"9 Iron", "iron"},
+  {"Pitching Wedge", "wedge"},
+  {"Gap Wedge", "wedge"},
+  {"Sand Wedge", "wedge"},
+  {"Lob Wedge", "wedge"},
+  {"Putter", "putter"}
+]
+
+clubs =
+  Enum.map(clubs_data, fn {name, type} ->
+    %Club{}
+    |> Club.changeset(%{name: name, type: type})
+    |> Repo.insert!()
+  end)
+
+# Create a map for easy lookup by type or name to simulate realistic usage
+driver = Enum.find(clubs, &(&1.type == "driver"))
+woods = Enum.filter(clubs, &(&1.type == "wood"))
+hybrids = Enum.filter(clubs, &(&1.type == "hybrid"))
+irons = Enum.filter(clubs, &(&1.type == "iron"))
+wedges = Enum.filter(clubs, &(&1.type == "wedge"))
+putter = Enum.find(clubs, &(&1.type == "putter"))
 
 generate_holes = fn profile ->
   Enum.map(1..18, fn hole_num ->
@@ -51,6 +87,34 @@ generate_holes = fn profile ->
           {score, putts, fw_status, "short", nil, true, true}
       end
 
+    # Simulate Club Selection
+    club_ids =
+      cond do
+        par == 3 ->
+          # Par 3: Iron/Hybrid -> (Wedge if miss) -> Putter
+          tee_shot = Enum.random(irons ++ hybrids)
+          approach = if gir_status != "hit", do: [Enum.random(wedges)], else: []
+          [tee_shot.id] ++ Enum.map(approach, & &1.id) ++ [putter.id]
+
+        par == 4 ->
+          # Par 4: Driver -> Iron/Wedge -> (Wedge if miss) -> Putter
+          tee_shot = driver
+
+          approach_club =
+            if proximity && proximity < 150, do: Enum.random(wedges), else: Enum.random(irons)
+
+          recovery = if gir_status != "hit", do: [Enum.random(wedges)], else: []
+          [tee_shot.id, approach_club.id] ++ Enum.map(recovery, & &1.id) ++ [putter.id]
+
+        par == 5 ->
+          # Par 5: Driver -> Wood/Hybrid -> Wedge -> (Wedge if miss) -> Putter
+          tee_shot = driver
+          layup = Enum.random(woods ++ hybrids)
+          approach_club = Enum.random(wedges)
+          recovery = if gir_status != "hit", do: [Enum.random(wedges)], else: []
+          [tee_shot.id, layup.id, approach_club.id] ++ Enum.map(recovery, & &1.id) ++ [putter.id]
+      end
+
     %{
       hole_number: hole_num,
       par: par,
@@ -62,7 +126,8 @@ generate_holes = fn profile ->
       fairway_bunker: fw_bunker,
       greenside_bunker: gs_bunker,
       fairway_hit: fairway_status == "hit",
-      gir: gir_status == "hit"
+      gir: gir_status == "hit",
+      club_ids: club_ids
     }
   end)
 end
@@ -115,4 +180,4 @@ total_score3 = Enum.reduce(holes3, 0, fn h, acc -> acc + h.score end)
 })
 |> Repo.insert!()
 
-IO.puts("Seeded 3 rounds successfully!")
+IO.puts("Seeded clubs and 3 rounds successfully!")

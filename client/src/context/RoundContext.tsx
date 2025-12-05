@@ -1,4 +1,5 @@
 import { createContext, useContext, createResource, type Accessor, type JSX, onMount } from "solid-js";
+import { useNavigate, useLocation } from "@solidjs/router";
 import { db, type Round } from "../db";
 
 interface RoundContextValue {
@@ -7,11 +8,55 @@ interface RoundContextValue {
   refetchRounds: () => void;
   syncRound: (roundId: number) => Promise<void>;
   syncDown: () => Promise<void>;
+  syncClubs: () => Promise<void>;
 }
 
 const RoundContext = createContext<RoundContextValue>();
 
 export function RoundProvider(props: { children: JSX.Element }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check bag status on mount
+  const checkBag = async () => {
+    try {
+      const response = await fetch('/api/clubs');
+      if (response.ok) {
+        const json = await response.json();
+        // Check if data array is empty (no clubs)
+        if (json.data && json.data.length === 0) {
+          // No bag found, redirect to onboarding if not already there
+          if (location.pathname !== '/onboarding') {
+            navigate('/onboarding');
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to check bag", e);
+    }
+  };
+
+  const syncClubs = async () => {
+    try {
+        const response = await fetch('/api/clubs');
+        if (response.ok) {
+            const json = await response.json();
+            if (json.data && Array.isArray(json.data)) {
+                await db.clubs.clear(); // Refresh local cache
+                await db.clubs.bulkPut(json.data);
+            }
+        }
+    } catch (e) {
+        console.error("Failed to sync clubs", e);
+    }
+  };
+
+  onMount(() => {
+    checkBag();
+    syncClubs();
+    syncDown();
+  });
+
   // Fetch rounds from Local DB
   const fetchRounds = async () => {
     return await db.rounds.orderBy('date').reverse().toArray();
@@ -74,7 +119,8 @@ export function RoundProvider(props: { children: JSX.Element }) {
                     proximityToHole: h.proximity_to_hole,
                     // Map legacy fields if needed, or leave undefined
                     fairwayHit: h.fairway_hit,
-                    gir: h.gir
+                    gir: h.gir,
+                    clubIds: h.club_ids // Map club_ids to clubIds
                   });
                }
              }
@@ -87,10 +133,6 @@ export function RoundProvider(props: { children: JSX.Element }) {
       console.error("Sync Down Failed", e);
     }
   };
-
-  onMount(() => {
-    syncDown();
-  });
 
   const syncRound = async (roundId: number) => {
     try {
@@ -115,7 +157,8 @@ export function RoundProvider(props: { children: JSX.Element }) {
             gir_status: h.girStatus,
             fairway_bunker: h.fairwayBunker,
             greenside_bunker: h.greensideBunker,
-            proximity_to_hole: h.proximityToHole
+            proximity_to_hole: h.proximityToHole,
+            club_ids: h.clubIds // Map clubIds to club_ids
           }))
         }
       };
@@ -160,7 +203,8 @@ export function RoundProvider(props: { children: JSX.Element }) {
                         girStatus: h.gir_status,
                         fairwayBunker: h.fairway_bunker,
                         greensideBunker: h.greenside_bunker,
-                        proximityToHole: h.proximity_to_hole
+                        proximityToHole: h.proximity_to_hole,
+                        clubIds: h.club_ids
                     });
                 }
             }
@@ -180,7 +224,7 @@ export function RoundProvider(props: { children: JSX.Element }) {
   };
 
   return (
-    <RoundContext.Provider value={{ activeRounds, pastRounds, refetchRounds: refetch, syncRound, syncDown }}>
+    <RoundContext.Provider value={{ activeRounds, pastRounds, refetchRounds: refetch, syncRound, syncDown, syncClubs }}>
       {props.children}
     </RoundContext.Provider>
   );

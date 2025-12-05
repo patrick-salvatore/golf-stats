@@ -17,6 +17,7 @@ defmodule GolfStatsServer.Hole do
     field(:fairway_bunker, :boolean, default: false)
     field(:greenside_bunker, :boolean, default: false)
     field(:proximity_to_hole, :integer)
+    field(:club_ids, {:array, :integer}, default: [])
 
     belongs_to(:round, GolfStatsServer.Round)
 
@@ -37,7 +38,8 @@ defmodule GolfStatsServer.Hole do
       :gir_status,
       :fairway_bunker,
       :greenside_bunker,
-      :proximity_to_hole
+      :proximity_to_hole,
+      :club_ids
     ])
     |> validate_required([:hole_number, :par, :score, :putts])
   end

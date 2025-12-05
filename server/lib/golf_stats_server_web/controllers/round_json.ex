@@ -45,7 +45,8 @@ defmodule GolfStatsServerWeb.RoundJSON do
       gir_status: hole.gir_status,
       fairway_bunker: hole.fairway_bunker,
       greenside_bunker: hole.greenside_bunker,
-      proximity_to_hole: hole.proximity_to_hole
+      proximity_to_hole: hole.proximity_to_hole,
+      club_ids: hole.club_ids
     }
   end
 end

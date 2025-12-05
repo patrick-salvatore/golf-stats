@@ -10,6 +10,7 @@ defmodule GolfStatsServerWeb.Router do
 
     resources("/rounds", RoundController, except: [:new, :edit])
     resources("/holes", HoleController, except: [:new, :edit])
+    resources("/clubs", ClubController, except: [:new, :edit])
 
     get("/stats", StatsController, :dashboard)
   end

@@ -201,7 +201,7 @@ defmodule GolfStatsServer.Stats do
     Hole.changeset(hole, attrs)
   end
 
- def get_dashboard_stats do
+  def get_dashboard_stats do
     holes = Repo.all(Hole)
     rounds = Repo.all(Round)
 
@@ -301,6 +301,86 @@ defmodule GolfStatsServer.Stats do
         {k, %{putts: putts, count: count}}
       end)
 
+    # Club Stats logic
+    all_clubs = GolfStatsServer.Bag.list_clubs()
+    # Create a map of club_id => club_name for lookup
+    club_map = Enum.into(all_clubs, %{}, fn c -> {c.id, c.name} end)
+
+    club_stats =
+      holes
+      |> Enum.flat_map(fn h ->
+        # h.club_ids is a list of club IDs [driver_id, iron_id, putter_id]
+        # We assume order matters:
+        # 1. First club on Par 4/5 = Tee Shot (Fairway logic)
+        # 2. Last non-putter club = Approach Shot (GIR logic) - simplified heuristic
+        # 3. Putter = Putting (not tracking stats per putter usually)
+
+        # But wait, we need to map the result of the hole (fairway_status, gir_status) to the specific club used.
+
+        ids = h.club_ids || []
+
+        # Filter out invalid IDs just in case
+        valid_ids = Enum.filter(ids, &Map.has_key?(club_map, &1))
+
+        # Tee Shot (if Par > 3 and has clubs)
+        tee_shot =
+          if h.par > 3 and length(valid_ids) > 0 do
+            club_id = List.first(valid_ids)
+            %{club_id: club_id, type: :tee, result: h.fairway_status}
+          else
+            nil
+          end
+
+        # Approach Shot
+        # Heuristic: The shot BEFORE the first putt? Or just the last non-putter?
+        # Let's assume the user enters clubs in order.
+        # If GIR is tracked, we attribute it to the club used for the approach.
+        # If GIR = hit, score = par or better, usually.
+        # If we just take the last non-putter club, that's likely the approach club.
+        # We need to know which clubs are putters. 
+        # But we don't have club type here easily without querying.
+        # Let's use the club_map or assume the last club in the list might be a putter if we look at types.
+        # Actually, let's just assume the 2nd to last club is approach if the last is putter?
+        # Better: Filter out known putters if we can.
+
+        # For now, let's just collect all shots to aggregate usage first, 
+        # and do simple attribution for Tee Shots on Par 4/5.
+
+        # We can also track "Shots Hit" per club simply by counting occurrences.
+
+        usage = Enum.map(valid_ids, fn id -> %{club_id: id, type: :usage} end)
+
+        ([tee_shot] ++ usage)
+        # remove nils
+        |> Enum.filter(& &1)
+      end)
+      |> Enum.group_by(& &1.club_id)
+      |> Enum.map(fn {club_id, events} ->
+        name = Map.get(club_map, club_id, "Unknown")
+
+        total_uses = Enum.count(events, &(&1.type == :usage))
+
+        # Tee Stats
+        tee_events = Enum.filter(events, &(&1.type == :tee and &1.result))
+        tee_attempts = length(tee_events)
+        tee_hits = Enum.count(tee_events, &(&1.result == "hit"))
+
+        # Only return if meaningful
+        if total_uses > 0 do
+          %{
+            id: club_id,
+            name: name,
+            usageCount: total_uses,
+            fairwayData:
+              if(tee_attempts > 0, do: %{attempts: tee_attempts, hits: tee_hits}, else: nil)
+          }
+        else
+          nil
+        end
+      end)
+      |> Enum.filter(& &1)
+      |> Enum.sort_by(& &1.usageCount, :desc)
+
     %{
       avgScore: avg_score,
       avgPar3: avg_par3,
@@ -323,7 +403,8 @@ defmodule GolfStatsServer.Stats do
         totalHoles: total_holes_count,
         threePutts: three_putts,
         puttsByProx: formatted_putts_by_prox
-      }
+      },
+      clubStats: club_stats
     }
   end
 end
