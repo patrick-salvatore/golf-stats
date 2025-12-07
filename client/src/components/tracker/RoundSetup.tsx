@@ -1,12 +1,47 @@
+import { createSignal, For, Show } from "solid-js";
 import type { Component, Accessor, Setter } from "solid-js";
+import { api } from "../../api";
+import type { Course } from "../../db";
 
 interface RoundSetupProps {
   courseName: Accessor<string>;
   setCourseName: Setter<string>;
-  onStart: () => void;
+  onStart: (course?: Course) => void;
 }
 
 export const RoundSetup: Component<RoundSetupProps> = (props) => {
+  const [results, setResults] = createSignal<Course[]>([]);
+  const [showResults, setShowResults] = createSignal(false);
+
+  let searchTimeout: any;
+
+  const handleSearch = (e: InputEvent) => {
+    const val = (e.currentTarget as HTMLInputElement).value;
+    props.setCourseName(val);
+    
+    if (searchTimeout) clearTimeout(searchTimeout);
+    
+    if (val.length > 2) {
+      searchTimeout = setTimeout(async () => {
+        try {
+          const res = await api.searchCourses(val);
+          setResults(res);
+          setShowResults(true);
+        } catch (err) {
+          console.error(err);
+        }
+      }, 500);
+    } else {
+      setShowResults(false);
+    }
+  };
+
+  const selectCourse = (course: Course) => {
+    props.setCourseName(course.name);
+    setShowResults(false);
+    props.onStart(course);
+  };
+
   return (
     <div class="flex-1 flex flex-col justify-center p-6 max-w-md mx-auto w-full">
       <div class="mb-10 text-center">
@@ -30,26 +65,49 @@ export const RoundSetup: Component<RoundSetupProps> = (props) => {
           Where are we playing?
         </h1>
         <p class="text-slate-400">
-          Enter the course name to get started.
+          Search for a course or enter a name manually.
         </p>
       </div>
 
-      <input
-        type="text"
-        placeholder="e.g. Augusta National"
-        class="input-field text-xl text-center mb-8"
-        value={props.courseName()}
-        onInput={(e) => props.setCourseName(e.currentTarget.value)}
-        autofocus
-      />
+      <div class="relative mb-8">
+        <input
+            type="text"
+            placeholder="e.g. Augusta National"
+            class="input-field text-xl text-center w-full"
+            value={props.courseName()}
+            onInput={handleSearch}
+            autofocus
+        />
+        
+        <Show when={showResults() && results().length > 0}>
+            <div class="absolute w-full mt-2 bg-slate-800 rounded-xl shadow-xl border border-slate-700 max-h-60 overflow-y-auto z-50">
+                <For each={results()}>
+                    {(course) => (
+                        <button 
+                            class="w-full text-left p-4 hover:bg-slate-700 border-b border-slate-700/50 last:border-0 transition-colors"
+                            onClick={() => selectCourse(course)}
+                        >
+                            <div class="font-bold text-white">{course.name}</div>
+                            <div class="text-xs text-slate-400">{course.city}, {course.state}</div>
+                        </button>
+                    )}
+                </For>
+            </div>
+        </Show>
+      </div>
 
       <button
-        onClick={props.onStart}
+        onClick={() => props.onStart()}
         disabled={!props.courseName()}
         class="w-full bg-emerald-500 hover:bg-emerald-400 text-white p-5 rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-emerald-900/40 transition-all active:scale-95"
       >
-        Tee Off
+        Tee Off (Manual)
       </button>
+      
+      <p class="text-center text-xs text-slate-500 mt-4">
+        Selecting a course enables GPS & Maps. <br/>
+        <a href="/courses/new" class="text-emerald-500 underline">Add a new course</a>
+      </p>
     </div>
   );
 };

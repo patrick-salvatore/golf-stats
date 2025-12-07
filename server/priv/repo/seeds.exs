@@ -1,11 +1,16 @@
 alias GolfStatsServer.Repo
 alias GolfStatsServer.{Round, Hole}
 alias GolfStatsServer.Bag.Club
+alias GolfStatsServer.Accounts.User
 
 # Clear existing data
 Repo.delete_all(Hole)
 Repo.delete_all(Round)
 Repo.delete_all(Club)
+Repo.delete_all(User)
+
+# Create Default User
+{:ok, user} = Repo.insert(%User{username: "Demo User"})
 
 # Create Clubs
 clubs_data = [
@@ -29,7 +34,7 @@ clubs_data = [
 clubs =
   Enum.map(clubs_data, fn {name, type} ->
     %Club{}
-    |> Club.changeset(%{name: name, type: type})
+    |> Club.changeset(%{name: name, type: type, user_id: user.id})
     |> Repo.insert!()
   end)
 
@@ -79,7 +84,6 @@ generate_holes = fn profile ->
 
         :scramble ->
           # Missed greens, good saves
-          gir = false
           fw_status = if par > 3, do: Enum.random(["left", "right"]), else: nil
           putts = 1
           score = par + Enum.random([0, 1])
@@ -144,7 +148,8 @@ total_score1 = Enum.reduce(holes1, 0, fn h, acc -> acc + h.score end)
   total_score: total_score1,
   created_at: DateTime.new!(date1, ~T[08:00:00]),
   ended_at: DateTime.new!(date1, ~T[12:30:00]),
-  holes: holes1
+  holes: holes1,
+  user_id: user.id
 })
 |> Repo.insert!()
 
@@ -160,7 +165,8 @@ total_score2 = Enum.reduce(holes2, 0, fn h, acc -> acc + h.score end)
   total_score: total_score2,
   created_at: DateTime.new!(date2, ~T[09:00:00]),
   ended_at: DateTime.new!(date2, ~T[13:45:00]),
-  holes: holes2
+  holes: holes2,
+  user_id: user.id
 })
 |> Repo.insert!()
 
@@ -176,7 +182,8 @@ total_score3 = Enum.reduce(holes3, 0, fn h, acc -> acc + h.score end)
   total_score: total_score3,
   created_at: DateTime.new!(date3, ~T[07:30:00]),
   ended_at: DateTime.new!(date3, ~T[11:30:00]),
-  holes: holes3
+  holes: holes3,
+  user_id: user.id
 })
 |> Repo.insert!()
 

@@ -8,17 +8,8 @@ defmodule GolfStatsServer.Bag do
 
   alias GolfStatsServer.Bag.Club
 
-  @doc """
-  Returns the list of clubs.
-
-  ## Examples
-
-      iex> list_clubs()
-      [%Club{}, ...]
-
-  """
-  def list_clubs do
-    Repo.all(Club)
+  def list_clubs(user) do
+    Repo.all(from(c in Club, where: c.user_id == ^user.id))
   end
 
   @doc """
@@ -49,9 +40,9 @@ defmodule GolfStatsServer.Bag do
       {:error, %Ecto.Changeset{}}
 
   """
-  def create_club(attrs \\ %{}) do
+  def create_club(user, attrs \\ %{}) do
     %Club{}
-    |> Club.changeset(attrs)
+    |> Club.changeset(Map.put(attrs, "user_id", user.id))
     |> Repo.insert()
   end
 
@@ -100,5 +91,23 @@ defmodule GolfStatsServer.Bag do
   """
   def change_club(%Club{} = club, attrs \\ %{}) do
     Club.changeset(club, attrs)
+  end
+
+  def create_bag(_user, bag) when map_size(bag) == 0 do
+    []
+  end
+
+  def create_bag(user, bag) do
+    Repo.transaction(fn ->
+      bag
+      |> Enum.map(fn {name, type} ->
+        {:ok, club} = create_club(user, %{"name" => name, "type" => type})
+        club
+      end)
+    end)
+    |> case do
+      {:ok, clubs} -> clubs
+      {:error, reason} -> [{:error, reason}]
+    end
   end
 end

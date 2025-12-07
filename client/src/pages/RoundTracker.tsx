@@ -2,9 +2,12 @@ import {
   createSignal,
   Show,
   createRenderEffect,
+  createEffect,
+  onCleanup
 } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { db, type Hole, type Club } from "../db";
+import { db, type Hole, type Club, type Course, type HoleDefinition } from "../db";
+import { api } from "../api";
 import { useRounds } from "../context/RoundContext";
 import { ClubSelector } from "../components/ClubSelector";
 import { RoundSetup } from "../components/tracker/RoundSetup";
@@ -14,6 +17,7 @@ import { FairwayInput } from "../components/tracker/FairwayInput";
 import { ApproachInput } from "../components/tracker/ApproachInput";
 import { RecoveryInput } from "../components/tracker/RecoveryInput";
 import { PuttInput } from "../components/tracker/PuttInput";
+import { HoleMap } from "../components/tracker/HoleMap";
 
 export default function RoundTracker() {
   const navigate = useNavigate();
@@ -22,7 +26,13 @@ export default function RoundTracker() {
   const [step, setStep] = createSignal<"setup" | "playing" | "summary">(
     "setup"
   );
+  
+  // Course State
   const [courseName, setCourseName] = createSignal("");
+  const [_, setCourseId] = createSignal<number | undefined>(undefined);
+  const [holeDefinitions, setHoleDefinitions] = createSignal<HoleDefinition[]>([]);
+  
+  // Round State
   const [currentHoleNum, setCurrentHoleNum] = createSignal(1);
   const [holes, setHoles] = createSignal<Hole[]>([]);
   const [roundId, setRoundId] = createSignal<number | null>(null);
@@ -30,7 +40,12 @@ export default function RoundTracker() {
   const [loading, setLoading] = createSignal(false);
   const [availableClubs, setAvailableClubs] = createSignal<Club[]>([]);
 
-  // Current Hole State
+  // View State
+  const [viewMode, setViewMode] = createSignal<"score" | "map">("score");
+  const [userLat, setUserLat] = createSignal<number | undefined>(undefined);
+  const [userLng, setUserLng] = createSignal<number | undefined>(undefined);
+
+  // Current Hole Input State
   const [par, setPar] = createSignal(4);
   const [score, setScore] = createSignal(4);
   const [putts, setPutts] = createSignal(2);
@@ -47,9 +62,27 @@ export default function RoundTracker() {
   const [fairwayBunker, setFairwayBunker] = createSignal(false);
   const [greensideBunker, setGreensideBunker] = createSignal(false);
 
-  const resetHoleStats = () => {
-    setPar(4);
-    setScore(4);
+  // Geolocation
+  createEffect(() => {
+    if (step() === "playing" && "geolocation" in navigator) {
+      const id = navigator.geolocation.watchPosition(
+        (pos) => {
+          setUserLat(pos.coords.latitude);
+          setUserLng(pos.coords.longitude);
+        },
+        (err) => console.warn("Geolocation error", err),
+        { enableHighAccuracy: true }
+      );
+      onCleanup(() => navigator.geolocation.clearWatch(id));
+    }
+  });
+
+  const resetHoleStats = (holeNum: number) => {
+    // If we have hole definitions, use them
+    const def = holeDefinitions().find(h => h.holeNumber === holeNum);
+    
+    setPar(def?.par || 4);
+    setScore(def?.par || 4); // Default score to par
     setPutts(2);
     setFairwayStatus("hit");
     setGirStatus("hit");
@@ -58,6 +91,13 @@ export default function RoundTracker() {
     setGreensideBunker(false);
     setSelectedClubs([]);
     setLoading(false);
+    
+    // Switch to map view if we have coords
+    if (def?.lat && def?.lng) {
+        setViewMode("map");
+    } else {
+        setViewMode("score");
+    }
   };
 
   // Load clubs on init
@@ -84,6 +124,24 @@ export default function RoundTracker() {
           if (round) {
             setRoundId(rid);
             setCourseName(round.courseName);
+            setCourseId(round.courseId);
+
+            // Fetch course definitions if we have an ID
+            if (round.courseId) {
+                try {
+                    // Try to get from local DB first? Or just fetch api?
+                    // For now, let's fetch API to ensure freshness or fall back if offline?
+                    // Ideally we should cache in DB. 
+                    // Let's just fetch from API for now to keep it simple, 
+                    // assuming online for "playing" mostly or cached in SW.
+                    const fullCourse = await api.getCourse(round.courseId);
+                    if (fullCourse && fullCourse.holes) {
+                        setHoleDefinitions(fullCourse.holes);
+                    }
+                } catch(e) {
+                    console.warn("Could not load course definitions", e);
+                }
+            }
 
             const existingHoles = await db.holes
               .where("roundId")
@@ -98,8 +156,12 @@ export default function RoundTracker() {
               setStep("summary");
             } else {
               setStep("playing");
-              setCurrentHoleNum(existingHoles.length + 1);
-              resetHoleStats();
+              const nextHole = existingHoles.length + 1;
+              setCurrentHoleNum(nextHole);
+              
+              // Only reset stats if we haven't already (createRenderEffect runs on prop changes too)
+              // But here we are restoring.
+              resetHoleStats(nextHole);
             }
           }
         } catch (e) {
@@ -111,22 +173,43 @@ export default function RoundTracker() {
     }
   });
 
-  const startRound = async () => {
-    if (!courseName()) return;
+  const startRound = async (course?: Course) => {
+    const name = course ? course.name : courseName();
+    if (!name) return;
 
     try {
       const now = new Date().toISOString();
       const date = now.split("T")[0];
+      
+      let cid = course?.id;
+      let holesDefs: HoleDefinition[] = [];
+
+      // If a course was selected, get full details
+      if (course?.id) {
+        try {
+            const full = await api.getCourse(course.id);
+            cid = full.id;
+            holesDefs = full.holes || [];
+            setHoleDefinitions(holesDefs);
+        } catch(e) {
+            console.error("Failed to fetch full course details", e);
+        }
+      }
+
       const id = await db.rounds.add({
-        courseName: courseName(),
+        courseName: name,
+        courseId: cid,
         date,
         totalScore: 0,
         synced: 0,
         createdAt: now,
       });
+      
+      setCourseName(name);
+      setCourseId(cid);
 
       setSearchParams({ id });
-      resetHoleStats();
+      resetHoleStats(1);
     } catch (e) {
       console.error("Failed to start round", e);
     }
@@ -171,8 +254,9 @@ export default function RoundTracker() {
       if (currentHoleNum() === 18) {
         setStep("summary");
       } else {
-        setCurrentHoleNum(currentHoleNum() + 1);
-        resetHoleStats();
+        const nextHole = currentHoleNum() + 1;
+        setCurrentHoleNum(nextHole);
+        resetHoleStats(nextHole);
       }
     } catch (e) {
       console.error("Failed to save hole", e);
@@ -266,50 +350,76 @@ export default function RoundTracker() {
                 </div>
               </div>
 
+              {/* View Toggle */}
+              <div class="flex justify-center my-4 gap-2">
+                 <button 
+                    onClick={() => setViewMode("score")}
+                    class={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${viewMode() === 'score' ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-400'}`}
+                 >
+                    Score
+                 </button>
+                 <button 
+                    onClick={() => setViewMode("map")}
+                    class={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${viewMode() === 'map' ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-400'}`}
+                 >
+                    Map
+                 </button>
+              </div>
+
               <div class="flex-1 overflow-y-auto p-4 max-w-md mx-auto w-full space-y-6">
                 
-                {/* Club Selector */}
-                <div class="card p-0 overflow-hidden bg-transparent border-none shadow-none">
-                    <div class="flex justify-between items-baseline mb-2 px-1">
-                        <label class="text-slate-400 text-xs font-bold uppercase tracking-wider">
-                          Club Sequence
-                        </label>
-                        <span class="text-[10px] text-slate-500 font-mono">
-                            {selectedClubs().map(c => c.name).join(' → ')}
-                        </span>
-                    </div>
-                    <ClubSelector 
-                        clubs={availableClubs()} 
-                        selectedClubs={selectedClubs()}
-                        onClubSelect={addClubToHole} 
-                    />
-                </div>
-
-                <ScoreInput 
-                    par={par} setPar={setPar}
-                    score={score} setScore={setScore}
-                />
-
-                <Show when={par() > 3}>
-                    <FairwayInput 
-                        status={fairwayStatus}
-                        setStatus={setFairwayStatus}
+                <Show when={viewMode() === "map"}>
+                    <HoleMap 
+                        holeDef={holeDefinitions().find(h => h.holeNumber === currentHoleNum()) || null}
+                        userLat={userLat()}
+                        userLng={userLng()}
                     />
                 </Show>
 
-                <ApproachInput 
-                    girStatus={girStatus} setGirStatus={setGirStatus}
-                    proximity={proximity} setProximity={setProximity}
-                />
+                <Show when={viewMode() === "score"}>
+                    {/* Club Selector */}
+                    <div class="card p-0 overflow-hidden bg-transparent border-none shadow-none">
+                        <div class="flex justify-between items-baseline mb-2 px-1">
+                            <label class="text-slate-400 text-xs font-bold uppercase tracking-wider">
+                              Club Sequence
+                            </label>
+                            <span class="text-[10px] text-slate-500 font-mono">
+                                {selectedClubs().map(c => c.name).join(' → ')}
+                            </span>
+                        </div>
+                        <ClubSelector 
+                            clubs={availableClubs()} 
+                            selectedClubs={selectedClubs()}
+                            onClubSelect={addClubToHole} 
+                        />
+                    </div>
 
-                <RecoveryInput 
-                    fairwayBunker={fairwayBunker} setFairwayBunker={setFairwayBunker}
-                    greensideBunker={greensideBunker} setGreensideBunker={setGreensideBunker}
-                />
+                    <ScoreInput 
+                        par={par} setPar={setPar}
+                        score={score} setScore={setScore}
+                    />
 
-                <PuttInput 
-                    putts={putts} setPutts={setPutts}
-                />
+                    <Show when={par() > 3}>
+                        <FairwayInput 
+                            status={fairwayStatus}
+                            setStatus={setFairwayStatus}
+                        />
+                    </Show>
+
+                    <ApproachInput 
+                        girStatus={girStatus} setGirStatus={setGirStatus}
+                        proximity={proximity} setProximity={setProximity}
+                    />
+
+                    <RecoveryInput 
+                        fairwayBunker={fairwayBunker} setFairwayBunker={setFairwayBunker}
+                        greensideBunker={greensideBunker} setGreensideBunker={setGreensideBunker}
+                    />
+
+                    <PuttInput 
+                        putts={putts} setPutts={setPutts}
+                    />
+                </Show>
               </div>
 
               {/* Footer */}

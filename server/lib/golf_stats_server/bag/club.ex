@@ -3,8 +3,9 @@ defmodule GolfStatsServer.Bag.Club do
   import Ecto.Changeset
 
   schema "clubs" do
-    field :name, :string
-    field :type, :string
+    field(:name, :string)
+    field(:type, :string)
+    belongs_to(:user, GolfStatsServer.Accounts.User)
 
     timestamps(type: :utc_datetime)
   end
@@ -12,7 +13,8 @@ defmodule GolfStatsServer.Bag.Club do
   @doc false
   def changeset(club, attrs) do
     club
-    |> cast(attrs, [:name, :type])
-    |> validate_required([:name, :type])
+    |> cast(attrs, [:name, :type, :user_id])
+    |> validate_required([:name, :type, :user_id])
+    |> unique_constraint([:user_id, :name])
   end
 end

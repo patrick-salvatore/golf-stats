@@ -12,10 +12,10 @@ defmodule GolfStatsServer.Stats do
   @doc """
   Returns the list of rounds.
   """
-  def list_rounds do
+  def list_rounds(user) do
     holes_query = from(h in Hole, order_by: h.hole_number)
 
-    Round
+    from(r in Round, where: r.user_id == ^user.id, order_by: [desc: r.date])
     |> Repo.all()
     |> Repo.preload(holes: holes_query)
   end
@@ -54,9 +54,9 @@ defmodule GolfStatsServer.Stats do
       {:error, %Ecto.Changeset{}}
 
   """
-  def create_round(attrs \\ %{}) do
+  def create_round(user, attrs \\ %{}) do
     %Round{}
-    |> Round.changeset(attrs)
+    |> Round.changeset(Map.put(attrs, "user_id", user.id))
     |> Repo.insert()
   end
 
@@ -201,9 +201,14 @@ defmodule GolfStatsServer.Stats do
     Hole.changeset(hole, attrs)
   end
 
-  def get_dashboard_stats do
-    holes = Repo.all(Hole)
-    rounds = Repo.all(Round)
+  def get_dashboard_stats(user) do
+    # Filter holes through rounds belonging to user
+    holes =
+      Repo.all(
+        from(h in Hole, join: r in Round, on: h.round_id == r.id, where: r.user_id == ^user.id)
+      )
+
+    rounds = Repo.all(from(r in Round, where: r.user_id == ^user.id))
 
     avg_score =
       if Enum.empty?(rounds),
@@ -302,7 +307,7 @@ defmodule GolfStatsServer.Stats do
       end)
 
     # Club Stats logic
-    all_clubs = GolfStatsServer.Bag.list_clubs()
+    all_clubs = GolfStatsServer.Bag.list_clubs(user)
     # Create a map of club_id => club_name for lookup
     club_map = Enum.into(all_clubs, %{}, fn c -> {c.id, c.name} end)
 

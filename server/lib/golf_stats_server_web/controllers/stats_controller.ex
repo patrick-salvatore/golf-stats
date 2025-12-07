@@ -6,7 +6,8 @@ defmodule GolfStatsServerWeb.StatsController do
   action_fallback(GolfStatsServerWeb.FallbackController)
 
   def dashboard(conn, _params) do
-    stats = Stats.get_dashboard_stats()
+    user = conn.assigns.current_user
+    stats = Stats.get_dashboard_stats(user)
     json(conn, %{data: stats})
   end
 end

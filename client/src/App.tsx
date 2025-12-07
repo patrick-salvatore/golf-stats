@@ -8,6 +8,7 @@ const RoundTracker = lazy(() => import("./pages/RoundTracker"));
 const History = lazy(() => import("./pages/History"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
+const CourseCreator = lazy(() => import("./pages/CourseCreator"));
 
 const Layout = (props: { children?: JSX.Element }) => {
   return (
@@ -26,6 +27,7 @@ function App() {
       <Route path="/history" component={History} />
       <Route path="/stats" component={Dashboard} />
       <Route path="/onboarding" component={Onboarding} />
+      <Route path="/courses/new" component={CourseCreator} />
       <Route path="*param" component={() => <Navigate href="/" />} />
     </Router>
   );

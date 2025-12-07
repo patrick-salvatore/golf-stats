@@ -4,15 +4,18 @@ defmodule GolfStatsServerWeb.ClubController do
   alias GolfStatsServer.Bag
   alias GolfStatsServer.Bag.Club
 
-  action_fallback GolfStatsServerWeb.FallbackController
+  action_fallback(GolfStatsServerWeb.FallbackController)
 
   def index(conn, _params) do
-    clubs = Bag.list_clubs()
+    user = conn.assigns.current_user
+    clubs = Bag.list_clubs(user)
     render(conn, :index, clubs: clubs)
   end
 
   def create(conn, %{"club" => club_params}) do
-    with {:ok, %Club{} = club} <- Bag.create_club(club_params) do
+    user = conn.assigns.current_user
+
+    with {:ok, %Club{} = club} <- Bag.create_club(user, club_params) do
       conn
       |> put_status(:created)
       |> put_resp_header("location", ~p"/api/clubs/#{club}")

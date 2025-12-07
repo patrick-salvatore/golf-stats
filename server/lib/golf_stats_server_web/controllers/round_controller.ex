@@ -4,15 +4,18 @@ defmodule GolfStatsServerWeb.RoundController do
   alias GolfStatsServer.Stats
   alias GolfStatsServer.Round
 
-  action_fallback GolfStatsServerWeb.FallbackController
+  action_fallback(GolfStatsServerWeb.FallbackController)
 
   def index(conn, _params) do
-    rounds = Stats.list_rounds()
+    user = conn.assigns.current_user
+    rounds = Stats.list_rounds(user)
     render(conn, :index, rounds: rounds)
   end
 
   def create(conn, %{"round" => round_params}) do
-    with {:ok, %Round{} = round} <- Stats.create_round(round_params) do
+    user = conn.assigns.current_user
+
+    with {:ok, %Round{} = round} <- Stats.create_round(user, round_params) do
       conn
       |> put_status(:created)
       |> put_resp_header("location", ~p"/api/rounds/#{round}")

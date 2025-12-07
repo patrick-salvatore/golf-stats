@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from 'dexie';
 
 interface Round {
   id?: number;
+  courseId?: number; // Link to Course entity
   courseName: string;
   date: string; // Date of play
   totalScore: number;
@@ -39,22 +40,50 @@ interface Club {
   type: string;
 }
 
+interface Course {
+  id?: number;
+  name: string;
+  city: string;
+  state: string;
+  lat: number;
+  lng: number;
+  holeDefinitions: HoleDefinition[];
+  synced?: number; // 0 = false, 1 = true (if cached from server)
+}
+
+interface HoleDefinition {
+  id?: number;
+  courseId: number;
+  holeNumber: number;
+  par: number;
+  yardage: number;
+  handicap: number;
+  lat?: number;
+  lng?: number;
+  hazards?: any; // JSON object for bunkers, water, etc.
+}
+
+interface User {
+  id?: number;
+  username: string;
+}
+
+// ... existing interfaces ...
+
 const db = new Dexie('GolfStatsDB') as Dexie & {
   rounds: EntityTable<Round, 'id'>;
   holes: EntityTable<Hole, 'id'>;
   clubs: EntityTable<Club, 'id'>;
+  courses: EntityTable<Course, 'id'>;
+  users: EntityTable<User, 'id'>;
 };
 
-// Starting from version 1 as requested, clean slate logic
-db.version(1).stores({
-  rounds: '++id, date, synced, createdAt, endedAt',
-  holes: '++id, roundId, holeNumber, par, score, putts, fairwayStatus, girStatus, fairwayBunker, greensideBunker, proximityToHole'
+// ... existing versions ...
+
+// Version 4: Users
+db.version(4).stores({
+  users: '++id, username'
 });
 
-// Upgrade to version 2 to include clubs table and clubIds in holes (no schema change needed for array field usually in Dexie unless indexed)
-db.version(2).stores({
-  clubs: 'id, name, type'
-});
-
-export type { Round, Hole, Club };
+export type { Round, Hole, Club, Course, HoleDefinition, User };
 export { db };
