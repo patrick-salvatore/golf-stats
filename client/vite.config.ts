@@ -1,8 +1,14 @@
-import { defineConfig } from 'vite'
-import solid from 'vite-plugin-solid'
-import { VitePWA } from 'vite-plugin-pwa'
+import { defineConfig } from 'vite';
+import solid from 'vite-plugin-solid';
+import { VitePWA } from 'vite-plugin-pwa';
+import path from 'path';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '~': path.resolve(__dirname, './src'),
+    },
+  },
   plugins: [
     solid(),
     VitePWA({
@@ -23,23 +29,24 @@ export default defineConfig({
           {
             src: 'favicon.svg',
             sizes: '64x64',
-            type: 'image/svg+xml'
-          }
-        ]
-      }
-    })
+            type: 'image/svg+xml',
+          },
+        ],
+      },
+    }),
   ],
   server: {
+    // host: '192.168.1.156',
     port: 3000,
     proxy: {
       '/api': {
         target: 'http://localhost:4000',
         changeOrigin: true,
-      }
+      },
     },
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
-    }
-  }
-})
+    },
+  },
+});

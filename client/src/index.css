@@ -6,11 +6,29 @@
   color-scheme: dark;
 }
 
+html {
+  /* Prevent pull-to-refresh and bounce effects */
+  overscroll-behavior: none;
+}
+
 body {
   @apply bg-golf-dark text-golf-text antialiased;
   /* subtle gradient background */
   background-image: radial-gradient(circle at top right, rgba(16, 185, 129, 0.1), transparent 40%);
   min-height: 100vh;
+  
+  /* App-like behavior settings */
+  touch-action: manipulation; /* Disables double-tap zoom delay */
+  -webkit-tap-highlight-color: transparent; /* Removes tap highlight color */
+  -webkit-user-select: none; /* Safari text selection disable */
+  user-select: none; /* Standard text selection disable */
+  overscroll-behavior: none;
+}
+
+/* Allow text selection in inputs and textareas */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Custom Utilities */

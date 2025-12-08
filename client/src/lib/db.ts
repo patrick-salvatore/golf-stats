@@ -1,12 +1,35 @@
 import Dexie, { type EntityTable } from 'dexie';
 
+// Sync status enum for local-first data
+export const SyncStatus = {
+  PENDING: 0,    // Not yet synced to server
+  SYNCED: 1,     // Synced with server
+  MODIFIED: 2,   // Modified locally after sync
+  DELETED: 3,    // Marked for deletion
+} as const;
+
+export type SyncStatusType = typeof SyncStatus[keyof typeof SyncStatus];
+
+// Sync queue for tracking pending operations
+interface SyncQueueItem {
+  id?: number;
+  entity: 'round' | 'hole' | 'club' | 'course';
+  entityId: number;
+  operation: 'create' | 'update' | 'delete';
+  payload: unknown;
+  createdAt: string;
+  attempts: number;
+  lastError?: string;
+}
+
 interface Round {
   id?: number;
+  serverId?: number; // Server-assigned ID after sync
   courseId?: number; // Link to Course entity
   courseName: string;
   date: string; // Date of play
   totalScore: number;
-  synced: number; // 0 = false (Active), 1 = true (History)
+  syncStatus: SyncStatusType;
   createdAt?: string;
   endedAt?: string;
 }
@@ -35,20 +58,23 @@ interface Hole {
 }
 
 interface Club {
-  id: number;
+  id?: number;
+  serverId?: number;
   name: string;
   type: string;
+  syncStatus: SyncStatusType;
 }
 
 interface Course {
   id?: number;
+  serverId?: number;
   name: string;
   city: string;
   state: string;
   lat: number;
   lng: number;
   holeDefinitions: HoleDefinition[];
-  synced?: number; // 0 = false, 1 = true (if cached from server)
+  syncStatus: SyncStatusType;
 }
 
 interface HoleDefinition {
@@ -61,6 +87,7 @@ interface HoleDefinition {
   lat?: number;
   lng?: number;
   hazards?: any; // JSON object for bunkers, water, etc.
+  geo_features?: any; // GeoJSON FeatureCollection
 }
 
 interface User {
@@ -68,22 +95,23 @@ interface User {
   username: string;
 }
 
-// ... existing interfaces ...
-
 const db = new Dexie('GolfStatsDB') as Dexie & {
   rounds: EntityTable<Round, 'id'>;
   holes: EntityTable<Hole, 'id'>;
   clubs: EntityTable<Club, 'id'>;
   courses: EntityTable<Course, 'id'>;
   users: EntityTable<User, 'id'>;
+  syncQueue: EntityTable<SyncQueueItem, 'id'>;
 };
 
-// ... existing versions ...
+db.version(1).stores({
+  users: '++id, username',
+  rounds: '++id, serverId, date, syncStatus',
+  holes: '++id, roundId, holeNumber, [roundId+holeNumber]',
+  clubs: '++id, serverId, syncStatus',
+  courses: '++id, serverId, name, syncStatus',
+  syncQueue: '++id, entity, entityId, operation, createdAt'
+})
 
-// Version 4: Users
-db.version(4).stores({
-  users: '++id, username'
-});
-
-export type { Round, Hole, Club, Course, HoleDefinition, User };
+export type { Round, Hole, Club, Course, HoleDefinition, User, SyncQueueItem };
 export { db };

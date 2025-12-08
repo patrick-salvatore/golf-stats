@@ -10,7 +10,8 @@ Repo.delete_all(Club)
 Repo.delete_all(User)
 
 # Create Default User
-{:ok, user} = Repo.insert(%User{username: "Demo User"})
+{:ok, user} = Repo.insert(%User{username: "demo"})
+{:ok, user2} = Repo.insert(%User{username: "demo2"})
 
 # Create Clubs
 clubs_data = [
@@ -35,6 +36,13 @@ clubs =
   Enum.map(clubs_data, fn {name, type} ->
     %Club{}
     |> Club.changeset(%{name: name, type: type, user_id: user.id})
+    |> Repo.insert!()
+  end)
+
+clubs =
+  Enum.map(clubs_data, fn {name, type} ->
+    %Club{}
+    |> Club.changeset(%{name: name, type: type, user_id: user2.id})
     |> Repo.insert!()
   end)
 
@@ -186,5 +194,40 @@ total_score3 = Enum.reduce(holes3, 0, fn h, acc -> acc + h.score end)
   user_id: user.id
 })
 |> Repo.insert!()
+
+# Round 1
+date1 = ~D[2023-10-15]
+holes1 = generate_holes.(:good)
+total_score1 = Enum.reduce(holes1, 0, fn h, acc -> acc + h.score end)
+
+%Round{}
+|> Round.changeset(%{
+  course_name: "Pebble Beach",
+  date: date1,
+  total_score: total_score1,
+  created_at: DateTime.new!(date1, ~T[08:00:00]),
+  ended_at: DateTime.new!(date1, ~T[12:30:00]),
+  holes: holes1,
+  user_id: user2.id
+})
+|> Repo.insert!()
+
+# Round 2
+date2 = ~D[2023-10-22]
+holes2 = generate_holes.(:average)
+total_score2 = Enum.reduce(holes2, 0, fn h, acc -> acc + h.score end)
+
+%Round{}
+|> Round.changeset(%{
+  course_name: "St Andrews",
+  date: date2,
+  total_score: total_score2,
+  created_at: DateTime.new!(date2, ~T[09:00:00]),
+  ended_at: DateTime.new!(date2, ~T[13:45:00]),
+  holes: holes2,
+  user_id: user2.id
+})
+|> Repo.insert!()
+
 
 IO.puts("Seeded clubs and 3 rounds successfully!")

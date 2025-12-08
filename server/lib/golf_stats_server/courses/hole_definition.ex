@@ -10,6 +10,7 @@ defmodule GolfStatsServer.Courses.HoleDefinition do
     field(:lat, :float)
     field(:lng, :float)
     field(:hazards, :map)
+    field(:geo_features, :map)
     belongs_to(:course, GolfStatsServer.Courses.Course)
 
     timestamps(type: :utc_datetime)
@@ -18,7 +19,17 @@ defmodule GolfStatsServer.Courses.HoleDefinition do
   @doc false
   def changeset(hole_definition, attrs) do
     hole_definition
-    |> cast(attrs, [:hole_number, :par, :yardage, :handicap, :lat, :lng, :hazards, :course_id])
+    |> cast(attrs, [
+      :hole_number,
+      :par,
+      :yardage,
+      :handicap,
+      :lat,
+      :lng,
+      :hazards,
+      :geo_features,
+      :course_id
+    ])
     |> validate_required([:hole_number, :par, :yardage, :course_id])
   end
 end

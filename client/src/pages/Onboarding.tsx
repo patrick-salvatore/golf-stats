@@ -1,34 +1,92 @@
-import { createSignal, For, Show, onMount } from 'solid-js';
-import { useNavigate } from '@solidjs/router';
-import { db } from '../db';
-import { getAuthHeaders } from '../api';
+import { createSignal, For, Show, onMount, type JSX } from 'solid-js';
+import * as userApi from '../api/users';
+import { getUser, setUser } from '~/lib/storage';
+import { ClubStore } from '~/lib/local-data';
+import { AxiosError } from 'axios';
 import {
   DriverIcon,
-// ...
-} from '../components/ClubIcons';
+  WoodIcon,
+  HybridIcon,
+  IronIcon,
+  WedgeIcon,
+  PutterIcon,
+} from '../components/club_icons';
 
 type ClubType = 'driver' | 'wood' | 'hybrid' | 'iron' | 'wedge' | 'putter';
 
 interface ClubDefinition {
-// ...
+  name: string;
+  type: ClubType;
+  defaultSelected?: boolean;
 }
 
 const AVAILABLE_CLUBS: Record<string, ClubDefinition[]> = {
-// ... (keep as is)
+  Woods: [
+    { name: 'Driver', type: 'driver', defaultSelected: true },
+    { name: '3 Wood', type: 'wood', defaultSelected: true },
+    { name: '5 Wood', type: 'wood' },
+    { name: '7 Wood', type: 'wood' },
+  ],
+  Hybrids: [
+    { name: '2 Hybrid', type: 'hybrid' },
+    { name: '3 Hybrid', type: 'hybrid' },
+    { name: '4 Hybrid', type: 'hybrid' },
+    { name: '5 Hybrid', type: 'hybrid' },
+  ],
+  Irons: [
+    { name: '2 Iron', type: 'iron' },
+    { name: '3 Iron', type: 'iron' },
+    { name: '4 Iron', type: 'iron', defaultSelected: true },
+    { name: '5 Iron', type: 'iron', defaultSelected: true },
+    { name: '6 Iron', type: 'iron', defaultSelected: true },
+    { name: '7 Iron', type: 'iron', defaultSelected: true },
+    { name: '8 Iron', type: 'iron', defaultSelected: true },
+    { name: '9 Iron', type: 'iron', defaultSelected: true },
+  ],
+  Wedges: [
+    { name: 'PW', type: 'wedge', defaultSelected: true },
+    { name: 'GW', type: 'wedge' },
+    { name: '50°', type: 'wedge' },
+    { name: '52°', type: 'wedge' },
+    { name: 'SW', type: 'wedge', defaultSelected: true },
+    { name: '54°', type: 'wedge' },
+    { name: '56°', type: 'wedge' },
+    { name: 'LW', type: 'wedge' },
+    { name: '58°', type: 'wedge' },
+    { name: '60°', type: 'wedge' },
+  ],
+  Putter: [{ name: 'Putter', type: 'putter', defaultSelected: true }],
 };
 
-const getIcon = (type: ClubType) => {
-// ... (keep as is)
+const getIcon = (
+  type: ClubType,
+): ((props: { class?: string }) => JSX.Element) => {
+  switch (type) {
+    case 'driver':
+      return DriverIcon;
+    case 'wood':
+      return WoodIcon;
+    case 'hybrid':
+      return HybridIcon;
+    case 'iron':
+      return IronIcon;
+    case 'wedge':
+      return WedgeIcon;
+    case 'putter':
+      return PutterIcon;
+    default:
+      return IronIcon;
+  }
 };
 
 const Onboarding = () => {
-  const navigate = useNavigate();
   const [step, setStep] = createSignal<'user' | 'clubs'>('user');
   const [username, setUsername] = createSignal('');
   const [selectedClubs, setSelectedClubs] = createSignal<Set<string>>(
     new Set(),
   );
   const [isSubmitting, setIsSubmitting] = createSignal(false);
+  const [error, setError] = createSignal('');
 
   // Initialize with defaults
   const defaults = new Set<string>();
@@ -40,7 +98,7 @@ const Onboarding = () => {
   setSelectedClubs(defaults);
 
   onMount(async () => {
-    const user = await db.users.toCollection().first();
+    const user = await getUser();
     if (user) {
       setStep('clubs');
     }
@@ -50,52 +108,44 @@ const Onboarding = () => {
     e.preventDefault();
     if (!username()) return;
     setIsSubmitting(true);
+    setError('');
 
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username() }),
-      });
+      const response = await userApi.createUser(username());
+      const user = response.data;
 
-      if (res.ok) {
-        const json = await res.json();
-        const user = json.data;
-        
-        await db.users.clear();
-        await db.users.add(user);
-        
-        // Check if user already has a bag
-        try {
-          const headers = await getAuthHeaders();
-          const bagRes = await fetch('/api/bag', { headers });
-          if (bagRes.ok) {
-            const bagJson = await bagRes.json();
-            if (bagJson.data && Array.isArray(bagJson.data) && bagJson.data.length > 0) {
-               await db.clubs.clear();
-               await db.clubs.bulkPut(bagJson.data);
-               navigate('/');
-               return;
-            }
-          }
-        } catch (e) {
-          console.error("Failed to sync bag on login", e);
+      // Save user to local storage
+      await setUser(user);
+
+      // Check if user already has a bag
+      try {
+        const clubs = await ClubStore.fetchFromServer();
+        if (clubs && clubs.length > 0) {
+          // User already has a bag, skip to home
+          window.location.href = '/';
+          return;
         }
-        
-        setStep('clubs');
-      } else {
-        alert('Failed to sign in. Please try again.');
+      } catch (e) {
+        console.error('Failed to sync bag on login', e);
       }
+
+      setStep('clubs');
     } catch (err) {
       console.error(err);
-      alert('Error connecting to server.');
+      const axiosError = err as AxiosError<{
+        errors?: { username?: string[] };
+      }>;
+      if (axiosError.response?.data?.errors?.username) {
+        setError(`Username ${axiosError.response.data.errors.username[0]}`);
+      } else {
+        setError('Error connecting to server.');
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const toggleClub = (clubName: string) => {
-    // ... (keep as is)
     const current = new Set(selectedClubs());
     if (current.has(clubName)) {
       current.delete(clubName);
@@ -110,19 +160,18 @@ const Onboarding = () => {
     const bagToCreate = Object.values(AVAILABLE_CLUBS)
       .flat()
       .filter((c) => selectedClubs().has(c.name))
-      .reduce((acc, club) => ({ ...acc, [club.name]: club.type }), {});
+      .reduce(
+        (acc, club) => ({ ...acc, [club.name]: club.type }),
+        {} as Record<string, string>,
+      );
 
     try {
-      const headers = await getAuthHeaders();
-      await fetch('/api/bag', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify({ bag: bagToCreate }),
-      });
-      navigate('/');
+      await ClubStore.createBag(bagToCreate);
+      // Reload to trigger AuthProvider to pick up new user
+      window.location.href = '/';
     } catch (error) {
       console.error('Failed to create bag', error);
-      alert('Something went wrong creating your bag. Please try again.');
+      setError('Something went wrong creating your bag. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -134,12 +183,15 @@ const Onboarding = () => {
         <Show when={step() === 'user'}>
           <header class="mb-8 text-center">
             <h1 class="text-3xl font-bold text-white mb-2">Welcome</h1>
-            <p class="text-gray-400">
-              Enter a username to track your stats.
-            </p>
+            <p class="text-gray-400">Enter a username to track your stats.</p>
           </header>
 
           <form onSubmit={handleUserSubmit} class="space-y-6">
+            <Show when={error()}>
+              <div class="bg-red-500/20 border border-red-500/50 text-red-200 p-3 rounded-lg text-sm">
+                {error()}
+              </div>
+            </Show>
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-2">
                 Username
@@ -147,7 +199,14 @@ const Onboarding = () => {
               <input
                 type="text"
                 value={username()}
-                onInput={(e) => setUsername(e.currentTarget.value)}
+                onInput={(e) =>
+                  setUsername(
+                    e.currentTarget.value
+                      .toLowerCase()
+                      .replace(/[^a-z0-9_]/g, ''),
+                  )
+                }
+                onKeyDown={(e) => e.key === ' ' && e.preventDefault()}
                 class="w-full bg-golf-surface border border-white/10 rounded-lg p-4 text-white focus:outline-none focus:border-emerald-500"
                 placeholder="Tiger"
                 required

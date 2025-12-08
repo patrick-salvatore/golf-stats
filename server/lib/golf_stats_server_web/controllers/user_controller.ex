@@ -28,4 +28,9 @@ defmodule GolfStatsServerWeb.UserController do
         |> render(:show, user: user)
     end
   end
+
+  def me(conn, _params) do
+    user = conn.assigns.current_user
+    render(conn, :show, user: user)
+  end
 end

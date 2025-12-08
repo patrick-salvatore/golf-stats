@@ -27,5 +27,7 @@ defmodule GolfStatsServerWeb.Router do
     get("/bag", BagController, :index)
 
     get("/stats", StatsController, :dashboard)
+
+    get("/me", UserController, :me)
   end
 end

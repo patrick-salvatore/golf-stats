@@ -1,5 +1,7 @@
-import { createSignal, For } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import MapEditor from "~/components/map_editor";
+import * as courseApi from "~/api/courses";
 
 export default function CourseCreator() {
   const navigate = useNavigate();
@@ -7,6 +9,8 @@ export default function CourseCreator() {
   const [city, setCity] = createSignal("");
   const [state, setState] = createSignal("");
   const [loading, setLoading] = createSignal(false);
+  const [showMap, setShowMap] = createSignal(false);
+  const [mapData, setMapData] = createSignal<any>(null); // Stores the full FeatureCollection
 
   // Simple 18 hole setup
   const [holes, setHoles] = createSignal(
@@ -16,7 +20,8 @@ export default function CourseCreator() {
       yardage: 400,
       handicap: i + 1,
       lat: 0,
-      lng: 0
+      lng: 0,
+      geo_features: null as any // To store the per-hole GeoJSON
     }))
   );
 
@@ -24,6 +29,33 @@ export default function CourseCreator() {
     const newHoles = [...holes()];
     (newHoles[index] as any)[field] = parseInt(value) || 0;
     setHoles(newHoles);
+  };
+
+  // When map saves, we process the features
+  const handleMapSave = (geoJSON: any) => {
+    setMapData(geoJSON);
+    // Here we would ideally split the geoJSON into holes based on some property
+    // For now, we just keep it in state, and maybe assign it blindly or logic later
+    // Real implementation: We need to assign features to holes.
+    // For this MVP: We will save the ENTIRE GeoJSON to EVERY hole? No, that's heavy.
+    // We will save the relevant features to each hole if they are tagged.
+    // If not tagged, maybe we just save the whole course map to the Course object?
+    // The schema puts it on HoleDefinition.
+    
+    // Let's assume the user tags them in the editor (we need to add that UI)
+    // OR: We just find features geographically close to the hole coordinates?
+    
+    // Simple fallback: The User draws everything. We iterate through holes. 
+    // If a feature has property "hole" === hole_number, we assign it.
+    const newHoles = holes().map(h => {
+        const holeFeatures = {
+            type: "FeatureCollection",
+            features: geoJSON.features.filter((f: any) => f.properties?.hole === h.hole_number)
+        };
+        return { ...h, geo_features: holeFeatures };
+    });
+    setHoles(newHoles);
+    setShowMap(false);
   };
 
   const saveCourse = async () => {
@@ -35,16 +67,12 @@ export default function CourseCreator() {
         name: name(),
         city: city(),
         state: state(),
-        lat: 0,
+        lat: 0, // Should be derived from map center
         lng: 0,
         hole_definitions: holes()
       };
 
-      await fetch('/api/courses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ course: payload })
-      });
+      await courseApi.createCourse(payload);
 
       navigate('/tracker');
     } catch (e) {
@@ -60,6 +88,29 @@ export default function CourseCreator() {
         <h1 class="text-2xl font-bold text-emerald-500">Add New Course</h1>
         
         <div class="space-y-4 bg-slate-800 p-4 rounded-xl">
+          <div class="flex justify-between items-center">
+             <h2 class="font-bold text-emerald-500">Course Details</h2>
+             <button 
+               onClick={() => setShowMap(!showMap())}
+               class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-white"
+             >
+               {showMap() ? "Hide Map" : "Open Map Editor"}
+             </button>
+          </div>
+
+          <Show when={showMap()}>
+            <div class="h-[500px] w-full">
+              <MapEditor 
+                onSave={handleMapSave}
+                initialGeoJSON={mapData()}
+              />
+              <p class="text-xs text-slate-400 mt-2">
+                Draw polygons for Greens, Fairways, Bunkers. 
+                *Important:* Select a polygon and add a property "hole" with the hole number (e.g. 1) to assign it.
+              </p>
+            </div>
+          </Show>
+
           <input
             class="input-field w-full"
             placeholder="Course Name"

@@ -1,5 +1,6 @@
 import { createResource, Show, For } from "solid-js";
 import { A } from "@solidjs/router";
+import * as statsApi from "~/api/stats";
 
 // --- Statistics Interface ---
 interface DashboardStats {
@@ -45,10 +46,7 @@ interface DashboardStats {
 // --- Data Fetching ---
 const fetchStats = async (): Promise<DashboardStats | null> => {
   try {
-    const res = await fetch('/api/stats');
-    if (!res.ok) throw new Error("Failed to fetch stats");
-    const json = await res.json();
-    return json.data;
+    return await statsApi.getStats();
   } catch (e) {
     console.error(e);
     return null;

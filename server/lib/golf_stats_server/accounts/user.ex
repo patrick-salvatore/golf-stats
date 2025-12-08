@@ -15,6 +15,9 @@ defmodule GolfStatsServer.Accounts.User do
     user
     |> cast(attrs, [:username])
     |> validate_required([:username])
+    |> validate_format(:username, ~r/^[a-zA-Z0-9_]+$/,
+      message: "can only contain letters, numbers, and underscores"
+    )
     |> unique_constraint(:username)
   end
 end

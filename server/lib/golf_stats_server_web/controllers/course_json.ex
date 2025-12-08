@@ -46,7 +46,8 @@ defmodule GolfStatsServerWeb.CourseJSON do
       handicap: hole.handicap,
       lat: hole.lat,
       lng: hole.lng,
-      hazards: hole.hazards
+      hazards: hole.hazards,
+      geo_features: hole.geo_features
     }
   end
 end

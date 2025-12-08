@@ -7,7 +7,7 @@ defmodule GolfStatsServerWeb.Plugs.Auth do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    case get_req_header(conn, "x-user-username") do
+    case get_req_header(conn, "x-user") do
       [username | _] ->
         case Accounts.get_user_by_username(username) do
           nil ->

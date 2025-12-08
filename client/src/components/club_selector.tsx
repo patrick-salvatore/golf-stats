@@ -6,8 +6,11 @@ import {
   IronIcon,
   WedgeIcon,
   PutterIcon,
-} from "./ClubIcons";
-import { type Club } from "../db";
+} from "./club_icons";
+import { type StoredClub } from "~/lib/storage";
+
+// Use StoredClub as Club
+type Club = StoredClub;
 
 const getIcon = (type: string) => {
   switch (type.toLowerCase()) {

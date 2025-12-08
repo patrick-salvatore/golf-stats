@@ -1,8 +1,26 @@
 /* @refresh reload */
-import { render } from 'solid-js/web'
-import './index.css'
-import App from './App.tsx'
+import { render } from 'solid-js/web';
+import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 
-const root = document.getElementById('root')
+import './index.css';
+import App from './main.tsx';
 
-render(() => <App />, root!)
+const root = document.getElementById('root');
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      networkMode: 'offlineFirst',
+      retry: 1,
+    },
+  },
+});
+
+render(
+  () => (
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  ),
+  root!,
+);

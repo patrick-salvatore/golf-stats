@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
-import { useRounds } from "../context/RoundContext";
+import { useRounds } from "~/context/round_provider";
 
 export default function ActiveRoundBanner() {
   const { activeRounds } = useRounds();

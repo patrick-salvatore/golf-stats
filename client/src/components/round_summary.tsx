@@ -1,11 +1,28 @@
 import { type Component, For, Show } from "solid-js";
-import { type Hole } from "../../db";
+import type { LocalClub } from "~/lib/local-data";
+
+// Hole type for summary display
+interface Hole {
+  id?: number;
+  holeNumber: number;
+  par: number;
+  score: number;
+  putts: number;
+  fairwayStatus?: "hit" | "left" | "right";
+  girStatus?: "hit" | "long" | "short" | "left" | "right";
+  fairwayBunker: boolean;
+  greensideBunker: boolean;
+  proximityToHole?: number;
+  clubIds?: number[];
+}
 
 interface RoundSummaryProps {
   courseName: string;
   holes: Hole[];
+  clubs?: LocalClub[];
   isSynced: boolean;
   onAction: () => void;
+  onHoleClick?: (holeNumber: number) => void;
 }
 
 export const RoundSummary: Component<RoundSummaryProps> = (props) => {
@@ -45,7 +62,10 @@ export const RoundSummary: Component<RoundSummaryProps> = (props) => {
               if (diff > 0) scoreClass = "text-slate-300";
 
               return (
-                <div class="flex justify-between items-center p-3 rounded-lg bg-slate-800/50 border border-white/5 block">
+                <div 
+                  class="flex justify-between items-center p-3 rounded-lg bg-slate-800/50 border border-white/5 cursor-pointer hover:bg-slate-700/50 transition-colors"
+                  onClick={() => props.onHoleClick?.(h.holeNumber)}
+                >
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-400">
                       {h.holeNumber}
@@ -63,6 +83,20 @@ export const RoundSummary: Component<RoundSummaryProps> = (props) => {
                     <span class={`text-lg ${scoreClass}`}>
                       {h.score}
                     </span>
+                    {/* Chevron indicator */}
+                    <svg 
+                      class="w-4 h-4 text-slate-500" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                    >
+                      <path 
+                        stroke-linecap="round" 
+                        stroke-linejoin="round" 
+                        stroke-width="2" 
+                        d="M9 5l7 7-7 7" 
+                      />
+                    </svg>
                   </div>
                 </div>
               );

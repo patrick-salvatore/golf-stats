@@ -1,7 +1,9 @@
 import { createSignal, For, Show } from "solid-js";
 import type { Component, Accessor, Setter } from "solid-js";
-import { api } from "../../api";
-import type { Course } from "../../db";
+import { CourseStore, type LocalCourse } from "~/lib/local-data";
+
+// Use LocalCourse for the Course type
+type Course = LocalCourse;
 
 interface RoundSetupProps {
   courseName: Accessor<string>;
@@ -24,7 +26,7 @@ export const RoundSetup: Component<RoundSetupProps> = (props) => {
     if (val.length > 2) {
       searchTimeout = setTimeout(async () => {
         try {
-          const res = await api.searchCourses(val);
+          const res = await CourseStore.search(val);
           setResults(res);
           setShowResults(true);
         } catch (err) {
