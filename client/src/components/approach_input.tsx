@@ -1,9 +1,10 @@
 import type { Component, Accessor, Setter } from "solid-js";
 import { Show } from "solid-js";
+import type { GIRStatus } from "~/lib/db";
 
 interface ApproachInputProps {
-  girStatus: Accessor<"hit" | "long" | "short" | "left" | "right" | null>;
-  setGirStatus: Setter<"hit" | "long" | "short" | "left" | "right" | null>;
+  girStatus: Accessor<GIRStatus | null>;
+  setGirStatus: Setter<GIRStatus | null>;
   proximity: Accessor<number>;
   setProximity: Setter<number>;
 }

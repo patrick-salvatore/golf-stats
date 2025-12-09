@@ -33,6 +33,16 @@ export function AuthProvider(props: AuthProviderProps) {
   const [user, setUserSignal] = createSignal<StoredUser | null>(null);
   const [isLoading, setIsLoading] = createSignal(true);
 
+  const setUser = async (newUser: StoredUser) => {
+    await saveUser(newUser);
+    setUserSignal(newUser);
+  };
+
+  const logout = async () => {
+    await clearUser();
+    setUserSignal(null);
+  };
+
   // Load user on mount and verify with server
   createEffect(async () => {
     try {
@@ -65,16 +75,6 @@ export function AuthProvider(props: AuthProviderProps) {
     }
   });
 
-  const setUser = async (newUser: StoredUser) => {
-    await saveUser(newUser);
-    setUserSignal(newUser);
-  };
-
-  const logout = async () => {
-    await clearUser();
-    setUserSignal(null);
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -96,7 +96,7 @@ export function AuthProvider(props: AuthProviderProps) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }
@@ -105,4 +105,4 @@ export function useAuth() {
  * Get the current user synchronously (for use in API interceptors)
  * This reads directly from storage, not from context
  */
-export { getUser as getCurrentUser } from '~/lib/storage';
+export { getUser as getCurrentUser } from "~/lib/storage";

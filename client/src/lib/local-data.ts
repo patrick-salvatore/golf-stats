@@ -238,17 +238,35 @@ export const RoundStore = {
     return updated;
   },
 
-  // Delete a round (optimistic)
+  // Delete a round (optimistic, then sync to server)
   async delete(id: number): Promise<void> {
     const existing = await db.rounds.get(id);
     if (!existing) return;
     
-    // If synced with server, queue deletion
+    // If synced with server, delete from server first (if online)
     if (existing.serverId && existing.syncStatus === SyncStatus.SYNCED) {
-      await db.rounds.update(id, { syncStatus: SyncStatus.DELETED });
-      await addToSyncQueue('round', id, 'delete', { serverId: existing.serverId });
+      if (isOnline()) {
+        try {
+          // Delete from server
+          await roundApi.deleteRound(existing.serverId);
+          // Then delete locally
+          await db.transaction('rw', [db.rounds, db.holes], async () => {
+            await db.rounds.delete(id);
+            await db.holes.where('roundId').equals(id).delete();
+          });
+        } catch (error) {
+          console.error('Failed to delete round from server:', error);
+          // Queue for later deletion if server call fails
+          await db.rounds.update(id, { syncStatus: SyncStatus.DELETED });
+          await addToSyncQueue('round', id, 'delete', { serverId: existing.serverId });
+        }
+      } else {
+        // Offline: mark as deleted and queue for sync
+        await db.rounds.update(id, { syncStatus: SyncStatus.DELETED });
+        await addToSyncQueue('round', id, 'delete', { serverId: existing.serverId });
+      }
     } else {
-      // Not synced, just delete locally
+      // Not synced to server, just delete locally
       await db.transaction('rw', [db.rounds, db.holes], async () => {
         await db.rounds.delete(id);
         await db.holes.where('roundId').equals(id).delete();
@@ -690,8 +708,17 @@ export async function processSync(): Promise<void> {
         case 'round':
           if (item.operation === 'create' || item.operation === 'update') {
             await RoundStore.syncToServer(item.entityId);
+          } else if (item.operation === 'delete') {
+            const payload = item.payload as { serverId: number };
+            if (payload.serverId) {
+              await roundApi.deleteRound(payload.serverId);
+              // Delete locally after successful server deletion
+              await db.transaction('rw', [db.rounds, db.holes], async () => {
+                await db.rounds.delete(item.entityId);
+                await db.holes.where('roundId').equals(item.entityId).delete();
+              });
+            }
           }
-          // TODO: Handle delete
           break;
           
         case 'club':

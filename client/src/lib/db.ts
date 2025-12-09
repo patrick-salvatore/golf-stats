@@ -2,13 +2,13 @@ import Dexie, { type EntityTable } from 'dexie';
 
 // Sync status enum for local-first data
 export const SyncStatus = {
-  PENDING: 0,    // Not yet synced to server
-  SYNCED: 1,     // Synced with server
-  MODIFIED: 2,   // Modified locally after sync
-  DELETED: 3,    // Marked for deletion
+  PENDING: 0, // Not yet synced to server
+  SYNCED: 1, // Synced with server
+  MODIFIED: 2, // Modified locally after sync
+  DELETED: 3, // Marked for deletion
 } as const;
 
-export type SyncStatusType = typeof SyncStatus[keyof typeof SyncStatus];
+export type SyncStatusType = (typeof SyncStatus)[keyof typeof SyncStatus];
 
 // Sync queue for tracking pending operations
 interface SyncQueueItem {
@@ -34,6 +34,9 @@ interface Round {
   endedAt?: string;
 }
 
+export type FairwayStatus = 'hit' | 'left' | 'right';
+export type GIRStatus = 'hit' | 'long' | 'short' | 'left' | 'right';
+
 interface Hole {
   id?: number;
   roundId: number;
@@ -41,14 +44,14 @@ interface Hole {
   par: number;
   score: number;
   putts: number;
-  
+
   // Detailed stats
-  fairwayStatus?: 'hit' | 'left' | 'right';
-  girStatus?: 'hit' | 'long' | 'short' | 'left' | 'right';
+  fairwayStatus?: FairwayStatus;
+  girStatus?: GIRStatus;
   fairwayBunker: boolean;
   greensideBunker: boolean;
   proximityToHole?: number;
-  
+
   // Club Tracking
   clubIds?: number[]; // Sequence of club IDs used
 
@@ -110,8 +113,8 @@ db.version(1).stores({
   holes: '++id, roundId, holeNumber, [roundId+holeNumber]',
   clubs: '++id, serverId, syncStatus',
   courses: '++id, serverId, name, syncStatus',
-  syncQueue: '++id, entity, entityId, operation, createdAt'
-})
+  syncQueue: '++id, entity, entityId, operation, createdAt',
+});
 
 export type { Round, Hole, Club, Course, HoleDefinition, User, SyncQueueItem };
 export { db };

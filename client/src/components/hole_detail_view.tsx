@@ -1,6 +1,6 @@
-import { type Component, Show } from "solid-js";
-import type { LocalClub } from "~/lib/local-data";
-import { ClubDisplay } from "./club_display";
+import { type Component, Show } from 'solid-js';
+import type { LocalClub } from '~/lib/local-data';
+import { ClubDisplay } from './club_display';
 
 // Hole type matching round_summary
 interface Hole {
@@ -9,8 +9,8 @@ interface Hole {
   par: number;
   score: number;
   putts: number;
-  fairwayStatus?: "hit" | "left" | "right";
-  girStatus?: "hit" | "long" | "short" | "left" | "right";
+  fairwayStatus?: 'hit' | 'left' | 'right';
+  girStatus?: 'hit' | 'long' | 'short' | 'left' | 'right';
   fairwayBunker: boolean;
   greensideBunker: boolean;
   proximityToHole?: number;
@@ -24,27 +24,26 @@ interface HoleDetailViewProps {
   courseName: string;
   onBack: () => void;
   onNavigate: (holeNumber: number) => void;
+  onEdit: () => void;
 }
 
 const getScoreDiff = (par: number, score: number): string => {
   const diff = score - par;
-  if (diff === 0) return "E";
+  if (diff === 0) return 'E';
   return diff > 0 ? `+${diff}` : `${diff}`;
 };
 
 const getScoreColor = (par: number, score: number): string => {
   const diff = score - par;
-  if (diff <= -2) return "text-amber-400"; // Eagle or better
-  if (diff === -1) return "text-emerald-400"; // Birdie
-  if (diff === 0) return "text-white"; // Par
-  if (diff === 1) return "text-orange-400"; // Bogey
-  return "text-red-400"; // Double+
+  if (diff <= -2) return 'text-amber-400'; // Eagle or better
+  if (diff === -1) return 'text-emerald-400'; // Birdie
+  if (diff === 0) return 'text-white'; // Par
+  if (diff === 1) return 'text-orange-400'; // Bogey
+  return 'text-red-400'; // Double+
 };
 
 const EmptyState: Component<{ text: string }> = (props) => (
-  <div class="text-center py-3 text-slate-500 text-sm italic">
-    {props.text}
-  </div>
+  <div class="text-center py-3 text-slate-500 text-sm italic">{props.text}</div>
 );
 
 export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
@@ -62,26 +61,38 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
       {/* Header */}
       <div class="bg-slate-900/80 backdrop-blur-md p-4 sticky top-0 z-10 border-b border-white/5">
         <div class="max-w-md mx-auto">
-          <button
-            onClick={props.onBack}
-            class="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-2"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
+          <div class="flex justify-between items-center mb-2">
+            <button
+              onClick={props.onBack}
+              class="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
             >
-              <path
-                fill-rule="evenodd"
-                d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="text-sm font-medium">Back to Summary</span>
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              <span class="text-sm font-medium">Back</span>
+            </button>
+          </div>
           <div class="flex justify-between items-center">
-            <div>
+            <div class="text-center">
+              <span class="text-xs text-slate-400 block">
+                Par {props.hole.par}
+              </span>
+              <span
+                class={`font-mono font-bold text-lg ${getScoreColor(props.hole.par, props.hole.score)}`}
+              >
+                {getScoreDiff(props.hole.par, props.hole.score)}
+              </span>
+            </div>
+            <div class="text-center">
               <h2 class="text-xs font-bold text-emerald-500 uppercase tracking-widest">
                 Hole {props.hole.holeNumber}
               </h2>
@@ -89,12 +100,26 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
                 {props.courseName}
               </span>
             </div>
-            <div class="text-right">
-              <span class="text-xs text-slate-400 block">Par {props.hole.par}</span>
-              <span class={`font-mono font-bold text-lg ${getScoreColor(props.hole.par, props.hole.score)}`}>
-                {getScoreDiff(props.hole.par, props.hole.score)}
-              </span>
-            </div>
+            <button
+              onClick={props.onEdit}
+              class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-blue-500/20 transition-colors text-slate-400 hover:text-blue-400"
+              aria-label="Edit hole"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -107,21 +132,19 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
             <label class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">
               Par
             </label>
-            <span class="text-4xl font-black text-white">
-              {props.hole.par}
-            </span>
+            <span class="text-4xl font-black text-white">{props.hole.par}</span>
           </div>
           <div class="card flex flex-col items-center justify-center py-6 border-emerald-500/30 bg-gradient-to-br from-slate-800 to-slate-900">
             <label class="text-emerald-500 text-xs font-bold uppercase tracking-wider mb-2">
               Score
             </label>
             <div class="flex items-center gap-3">
-              <span class={`text-4xl font-black ${getScoreColor(props.hole.par, props.hole.score)}`}>
+              <span
+                class={`text-4xl font-black ${getScoreColor(props.hole.par, props.hole.score)}`}
+              >
                 {props.hole.score}
               </span>
-              <span class={`text-lg font-bold ${getScoreColor(props.hole.par, props.hole.score)}`}>
-                {getScoreDiff(props.hole.par, props.hole.score)}
-              </span>
+              
             </div>
           </div>
         </div>
@@ -142,27 +165,27 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
               <div class="flex bg-slate-800 rounded-xl p-1 border border-white/5">
                 <div
                   class={`flex-1 py-3 rounded-lg font-bold text-sm text-center transition-all ${
-                    props.hole.fairwayStatus === "left"
-                      ? "bg-amber-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.fairwayStatus === 'left'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   Left
                 </div>
                 <div
                   class={`flex-1 py-3 rounded-lg font-bold text-sm text-center transition-all ${
-                    props.hole.fairwayStatus === "hit"
-                      ? "bg-emerald-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.fairwayStatus === 'hit'
+                      ? 'bg-emerald-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   Hit
                 </div>
                 <div
                   class={`flex-1 py-3 rounded-lg font-bold text-sm text-center transition-all ${
-                    props.hole.fairwayStatus === "right"
-                      ? "bg-amber-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.fairwayStatus === 'right'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   Right
@@ -185,45 +208,45 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
               <div class="flex bg-slate-800 rounded-xl p-1 border border-white/5">
                 <div
                   class={`flex-1 py-2 rounded-lg font-bold text-xs text-center transition-all ${
-                    props.hole.girStatus === "long"
-                      ? "bg-amber-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.girStatus === 'long'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   Long
                 </div>
                 <div
                   class={`flex-1 py-2 rounded-lg font-bold text-xs text-center transition-all ${
-                    props.hole.girStatus === "left"
-                      ? "bg-amber-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.girStatus === 'left'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   Left
                 </div>
                 <div
                   class={`flex-1 py-2 rounded-lg font-bold text-xs text-center transition-all ${
-                    props.hole.girStatus === "hit"
-                      ? "bg-emerald-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.girStatus === 'hit'
+                      ? 'bg-emerald-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   GIR
                 </div>
                 <div
                   class={`flex-1 py-2 rounded-lg font-bold text-xs text-center transition-all ${
-                    props.hole.girStatus === "right"
-                      ? "bg-amber-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.girStatus === 'right'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   Right
                 </div>
                 <div
                   class={`flex-1 py-2 rounded-lg font-bold text-xs text-center transition-all ${
-                    props.hole.girStatus === "short"
-                      ? "bg-amber-500 text-white shadow-lg"
-                      : "text-slate-600"
+                    props.hole.girStatus === 'short'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'text-slate-600'
                   }`}
                 >
                   Short
@@ -231,11 +254,13 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
               </div>
 
               {/* Proximity */}
-              <Show when={props.hole.girStatus === "hit"}>
+              <Show when={props.hole.girStatus === 'hit'}>
                 <div class="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3 border border-white/5">
                   <span class="text-sm text-slate-400">Proximity to Hole</span>
                   <span class="text-lg font-bold text-white">
-                    {props.hole.proximityToHole ? `${props.hole.proximityToHole} ft` : "—"}
+                    {props.hole.proximityToHole
+                      ? `${props.hole.proximityToHole} ft`
+                      : '—'}
                   </span>
                 </div>
               </Show>
@@ -253,20 +278,22 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
               <span class="text-sm text-slate-400">Fairway Bunker</span>
               <span
                 class={`text-sm font-bold ${
-                  props.hole.fairwayBunker ? "text-amber-400" : "text-slate-500"
+                  props.hole.fairwayBunker ? 'text-amber-400' : 'text-slate-500'
                 }`}
               >
-                {props.hole.fairwayBunker ? "Yes" : "No"}
+                {props.hole.fairwayBunker ? 'Yes' : 'No'}
               </span>
             </div>
             <div class="flex items-center justify-between bg-slate-800 rounded-xl px-4 py-3 border border-white/5">
               <span class="text-sm text-slate-400">Greenside</span>
               <span
                 class={`text-sm font-bold ${
-                  props.hole.greensideBunker ? "text-amber-400" : "text-slate-500"
+                  props.hole.greensideBunker
+                    ? 'text-amber-400'
+                    : 'text-slate-500'
                 }`}
               >
-                {props.hole.greensideBunker ? "Yes" : "No"}
+                {props.hole.greensideBunker ? 'Yes' : 'No'}
               </span>
             </div>
           </div>
@@ -300,8 +327,8 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
           disabled={!hasPrev()}
           class={`flex-1 p-4 rounded-xl font-bold text-lg shadow-xl transition-all flex items-center justify-center gap-2 ${
             hasPrev()
-              ? "bg-slate-800 hover:bg-slate-700 text-white active:scale-[0.98]"
-              : "bg-slate-800/50 text-slate-600 cursor-not-allowed"
+              ? 'bg-slate-800 hover:bg-slate-700 text-white active:scale-[0.98]'
+              : 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
           }`}
         >
           <svg
@@ -316,18 +343,18 @@ export const HoleDetailView: Component<HoleDetailViewProps> = (props) => {
               clip-rule="evenodd"
             />
           </svg>
-          <span>Hole {prevHoleNum() ?? "—"}</span>
+          <span>Hole {prevHoleNum() ?? '—'}</span>
         </button>
         <button
           onClick={() => nextHoleNum() && props.onNavigate(nextHoleNum()!)}
           disabled={!hasNext()}
           class={`flex-1 p-4 rounded-xl font-bold text-lg shadow-xl transition-all flex items-center justify-center gap-2 ${
             hasNext()
-              ? "bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-900/40 active:scale-[0.98]"
-              : "bg-slate-800/50 text-slate-600 cursor-not-allowed"
+              ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-900/40 active:scale-[0.98]'
+              : 'bg-slate-800/50 text-slate-600 cursor-not-allowed'
           }`}
         >
-          <span>Hole {nextHoleNum() ?? "—"}</span>
+          <span>Hole {nextHoleNum() ?? '—'}</span>
           <svg
             xmlns="http://www.w3.org/2000/svg"
             class="h-5 w-5"

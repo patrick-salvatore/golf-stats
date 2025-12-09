@@ -13,6 +13,7 @@ defmodule GolfStatsServerWeb.Router do
     pipe_through(:api)
 
     post("/users", UserController, :create)
+    get("/club_definitions", ClubDefinitionController, :index)
   end
 
   scope "/api", GolfStatsServerWeb do

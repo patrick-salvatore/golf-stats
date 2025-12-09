@@ -7,9 +7,14 @@ defmodule GolfStatsServer.Bag do
   alias GolfStatsServer.Repo
 
   alias GolfStatsServer.Bag.Club
+  alias GolfStatsServer.Bag.ClubDefinition
 
   def list_clubs(user) do
     Repo.all(from(c in Club, where: c.user_id == ^user.id))
+  end
+
+  def list_club_definitions do
+    Repo.all(from(d in ClubDefinition, order_by: [asc: :sort_order]))
   end
 
   @doc """

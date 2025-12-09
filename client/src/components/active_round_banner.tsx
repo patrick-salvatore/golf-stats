@@ -1,9 +1,9 @@
 import { For, Show } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
-import { useRounds } from "~/context/round_provider";
+import { useAppContext } from "~/context/app_provider";
 
 export default function ActiveRoundBanner() {
-  const { activeRounds } = useRounds();
+  const { activeRounds } = useAppContext();
   const location = useLocation();
 
   return (
@@ -25,7 +25,7 @@ export default function ActiveRoundBanner() {
                                 <span class="block font-bold text-white text-lg leading-tight">{round.courseName}</span>
                                 <span class="text-slate-400 text-xs">{round.date}</span>
                             </div>
-                            <A href={`/track?id=${round.id}`} class="bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors shadow-lg shadow-emerald-900/20">
+                            <A href={`/track/${round.id}?mode=playing`} class="bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold px-4 py-2 rounded-lg transition-colors shadow-lg shadow-emerald-900/20">
                                 Resume
                             </A>
                         </div>

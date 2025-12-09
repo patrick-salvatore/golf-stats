@@ -17,9 +17,9 @@ interface ClubDisplayProps {
 type ClubType = "driver" | "wood" | "hybrid" | "iron" | "wedge" | "putter";
 
 const getClubIcon = (
-  type: string
+  type: string | undefined
 ): ((props: { class?: string }) => JSX.Element) => {
-  switch (type as ClubType) {
+  switch (type?.toLowerCase() as ClubType | undefined) {
     case "driver":
       return DriverIcon;
     case "wood":

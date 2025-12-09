@@ -1,6 +1,6 @@
 import { createSignal, createMemo, For, Show } from "solid-js";
 import { A } from "@solidjs/router";
-import { useRoundsQuery } from "~/hooks/use_rounds_query";
+import { useRoundsQuery } from "../hooks/use_rounds_query";
 
 const ITEMS_PER_PAGE = 10;
 

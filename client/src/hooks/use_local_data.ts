@@ -1,6 +1,6 @@
 /**
  * TanStack Query hooks for the local-first data layer
- * 
+ *
  * These hooks provide:
  * - Automatic caching via TanStack Query
  * - Optimistic updates
@@ -9,17 +9,19 @@
  */
 
 import { useQueryClient, useQuery, useMutation } from '@tanstack/solid-query';
-import { createSignal, onMount, onCleanup } from 'solid-js';
-import { 
-  LocalData, 
-  RoundStore, 
-  HoleStore, 
-  ClubStore, 
+import { createSignal, onMount, onCleanup, createEffect } from 'solid-js';
+import {
+  LocalData,
+  RoundStore,
+  HoleStore,
+  ClubStore,
   CourseStore,
   type LocalRound,
   type LocalHole,
   type LocalCourse,
+  type LocalClub,
 } from '~/lib/local-data';
+import { queryClient } from '~/lib/query';
 
 // ============ Query Keys ============
 
@@ -27,8 +29,8 @@ export const queryKeys = {
   // Rounds
   rounds: {
     all: ['rounds'] as const,
-    active: () => [...queryKeys.rounds.all, 'active'] as const,
-    synced: () => [...queryKeys.rounds.all, 'synced'] as const,
+    active: ['rounds', 'active'] as const,
+    synced: ['rounds', 'synced'] as const,
     detail: (id: number) => [...queryKeys.rounds.all, 'detail', id] as const,
   },
   // Clubs
@@ -38,7 +40,7 @@ export const queryKeys = {
   // Courses
   courses: {
     all: ['courses'] as const,
-    search: (query: string) => [...queryKeys.courses.all, 'search', query] as const,
+    search: (query: string) => ['course', 'search', query] as const,
     detail: (id: number) => [...queryKeys.courses.all, 'detail', id] as const,
   },
   // Sync
@@ -49,44 +51,44 @@ export const queryKeys = {
 };
 
 // ============ Round Hooks ============
-
-/**
- * Get all rounds (active + synced) from local DB
- */
-export function useRounds() {
-  return useQuery(() => ({
-    queryKey: queryKeys.rounds.all,
-    queryFn: () => RoundStore.getAll(),
-    staleTime: 1000 * 60, // 1 minute
-  }));
-}
-
 /**
  * Get active (unsynced) rounds only
  */
 export function useActiveRounds() {
   return useQuery(() => ({
-    queryKey: queryKeys.rounds.active(),
-    queryFn: () => RoundStore.getActive(),
+    queryKey: queryKeys.rounds.active,
+    queryFn: () => RoundStore.getActive,
     staleTime: 0, // Always fresh for active rounds
   }));
 }
 
-/**
- * Get synced rounds + fetch from server
- */
-export function useSyncedRounds() {
-  return useQuery(() => ({
-    queryKey: queryKeys.rounds.synced(),
-    queryFn: async () => {
-      // First return local, then fetch from server
-      if (navigator.onLine) {
-        return RoundStore.fetchFromServer();
-      }
-      return RoundStore.getSynced();
-    },
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  }));
+export function useRoundsQuery() {
+  const [rounds, setRounds] = createSignal<LocalRound[]>([]);
+
+  createEffect(async () => {
+    const idbRounds = await RoundStore.getAll();
+
+    if (idbRounds.length) {
+      setRounds(idbRounds);
+    }
+
+    queryClient
+      .fetchQuery({
+        queryKey: queryKeys.rounds.synced,
+        queryFn: async () => {
+          // First return local, then fetch from server
+          if (navigator.onLine) {
+            return RoundStore.fetchFromServer();
+          }
+        },
+        staleTime: 1000 * 60 * 5, // 5 minutes
+      })
+      .then((data) => {
+        setRounds(data ?? []);
+      });
+  });
+
+  return rounds;
 }
 
 /**
@@ -105,13 +107,13 @@ export function useRound(id: () => number) {
  */
 export function useCreateRound() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
-    mutationFn: (round: Omit<LocalRound, 'id' | 'syncStatus'>) => 
+    mutationFn: (round: Omit<LocalRound, 'id' | 'syncStatus'>) =>
       RoundStore.create(round),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.active() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.active });
     },
   }));
 }
@@ -121,10 +123,15 @@ export function useCreateRound() {
  */
 export function useUpdateRound() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
-    mutationFn: ({ id, changes }: { id: number; changes: Partial<LocalRound> }) =>
-      RoundStore.update(id, changes),
+    mutationFn: ({
+      id,
+      changes,
+    }: {
+      id: number;
+      changes: Partial<LocalRound>;
+    }) => RoundStore.update(id, changes),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.rounds.detail(id) });
@@ -137,12 +144,12 @@ export function useUpdateRound() {
  */
 export function useDeleteRound() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
     mutationFn: (id: number) => RoundStore.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.active() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.active });
     },
   }));
 }
@@ -152,13 +159,13 @@ export function useDeleteRound() {
  */
 export function useSyncRound() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
     mutationFn: (id: number) => RoundStore.syncToServer(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.active() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.synced() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.active });
+      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.synced });
       queryClient.invalidateQueries({ queryKey: queryKeys.sync.count });
     },
   }));
@@ -182,15 +189,22 @@ export function useHolesForRound(roundId: () => number) {
  */
 export function useUpsertHole() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
-    mutationFn: ({ roundId, hole }: { roundId: number; hole: Omit<LocalHole, 'id'> }) =>
-      HoleStore.addOrUpdate(roundId, hole),
+    mutationFn: ({
+      roundId,
+      hole,
+    }: {
+      roundId: number;
+      hole: Omit<LocalHole, 'id'>;
+    }) => HoleStore.addOrUpdate(roundId, hole),
     onSuccess: (_, { roundId }) => {
-      queryClient.invalidateQueries({ 
-        queryKey: [...queryKeys.rounds.detail(roundId), 'holes'] 
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.rounds.detail(roundId), 'holes'],
       });
-      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.detail(roundId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.rounds.detail(roundId),
+      });
     },
   }));
 }
@@ -200,13 +214,18 @@ export function useUpsertHole() {
  */
 export function useSaveHoles() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
-    mutationFn: ({ roundId, holes }: { roundId: number; holes: Omit<LocalHole, 'id'>[] }) =>
-      HoleStore.saveAll(roundId, holes),
+    mutationFn: ({
+      roundId,
+      holes,
+    }: {
+      roundId: number;
+      holes: Omit<LocalHole, 'id'>[];
+    }) => HoleStore.saveAll(roundId, holes),
     onSuccess: (_, { roundId }) => {
-      queryClient.invalidateQueries({ 
-        queryKey: [...queryKeys.rounds.detail(roundId), 'holes'] 
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.rounds.detail(roundId), 'holes'],
       });
     },
   }));
@@ -218,19 +237,34 @@ export function useSaveHoles() {
  * Get all clubs from local DB
  * Fetches from server on mount if online
  */
-export function useClubs() {
-  return useQuery(() => ({
-    queryKey: queryKeys.clubs.all,
-    queryFn: async () => {
-      // Try to fetch from server first if online
-      if (navigator.onLine) {
-        return ClubStore.fetchFromServer();
-      }
-      // Fall back to local
-      return ClubStore.getAll();
-    },
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  }));
+
+export function useClubsQuery() {
+  const [clubs, setClubs] = createSignal<LocalClub[]>([]);
+
+  createEffect(async () => {
+    const idbClubs = await ClubStore.getAll();
+
+    if (idbClubs.length) {
+      setClubs(idbClubs);
+    }
+
+    queryClient
+      .fetchQuery({
+        queryKey: queryKeys.clubs.all,
+        queryFn: async () => {
+          // Try to fetch from server first if online
+          if (navigator.onLine) {
+            return ClubStore.fetchFromServer();
+          }
+        },
+        staleTime: 1000 * 60 * 5, // 5 minutes
+      })
+      .then((data) => {
+        setClubs(data ?? []);
+      });
+  });
+
+  return clubs;
 }
 
 /**
@@ -238,7 +272,7 @@ export function useClubs() {
  */
 export function useCreateBag() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
     mutationFn: (bag: Record<string, string>) => ClubStore.createBag(bag),
     onSuccess: () => {
@@ -287,7 +321,7 @@ export function useCourse(serverId: () => number) {
  */
 export function useCreateCourse() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
     mutationFn: (course: Omit<LocalCourse, 'id' | 'serverId' | 'syncStatus'>) =>
       CourseStore.create(course),
@@ -325,7 +359,7 @@ export function useSyncQueue() {
  */
 export function useProcessSync() {
   const queryClient = useQueryClient();
-  
+
   return useMutation(() => ({
     mutationFn: () => LocalData.processSync(),
     onSuccess: () => {
@@ -346,20 +380,20 @@ export function useProcessSync() {
  */
 export function useOnlineStatus() {
   const [isOnline, setIsOnline] = createSignal(navigator.onLine);
-  
+
   onMount(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-    
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
+
     onCleanup(() => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     });
   });
-  
+
   return isOnline;
 }
 
@@ -371,24 +405,27 @@ export function useOnlineStatus() {
 export function useLocalData() {
   const queryClient = useQueryClient();
   const isOnline = useOnlineStatus();
-  
+
   return {
     // Online status
     isOnline,
-    
+
     // Query client for manual operations
     queryClient,
-    
+
     // Invalidate helpers
-    invalidateRounds: () => queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all }),
-    invalidateClubs: () => queryClient.invalidateQueries({ queryKey: queryKeys.clubs.all }),
-    invalidateCourses: () => queryClient.invalidateQueries({ queryKey: queryKeys.courses.all }),
+    invalidateRounds: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all }),
+    invalidateClubs: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.clubs.all }),
+    invalidateCourses: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.courses.all }),
     invalidateAll: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.clubs.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.courses.all });
     },
-    
+
     // Trigger sync
     sync: () => LocalData.processSync(),
   };

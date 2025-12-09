@@ -11,10 +11,11 @@ defmodule GolfStatsServerWeb.BagJSON do
     %{data: club_json(club)}
   end
 
-  defp club_json(%Club{id: id, name: name}) do
+  defp club_json(%Club{id: id, name: name, type: type}) do
     %{
       id: id,
-      name: name
+      name: name,
+      type: type
     }
   end
 end

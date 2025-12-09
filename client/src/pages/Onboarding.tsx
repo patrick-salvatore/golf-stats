@@ -1,5 +1,6 @@
 import { createSignal, For, Show, onMount, type JSX } from 'solid-js';
 import * as userApi from '../api/users';
+import * as bagApi from '../api/bag';
 import { getUser, setUser } from '~/lib/storage';
 import { ClubStore } from '~/lib/local-data';
 import { AxiosError } from 'axios';
@@ -14,52 +15,8 @@ import {
 
 type ClubType = 'driver' | 'wood' | 'hybrid' | 'iron' | 'wedge' | 'putter';
 
-interface ClubDefinition {
-  name: string;
-  type: ClubType;
-  defaultSelected?: boolean;
-}
-
-const AVAILABLE_CLUBS: Record<string, ClubDefinition[]> = {
-  Woods: [
-    { name: 'Driver', type: 'driver', defaultSelected: true },
-    { name: '3 Wood', type: 'wood', defaultSelected: true },
-    { name: '5 Wood', type: 'wood' },
-    { name: '7 Wood', type: 'wood' },
-  ],
-  Hybrids: [
-    { name: '2 Hybrid', type: 'hybrid' },
-    { name: '3 Hybrid', type: 'hybrid' },
-    { name: '4 Hybrid', type: 'hybrid' },
-    { name: '5 Hybrid', type: 'hybrid' },
-  ],
-  Irons: [
-    { name: '2 Iron', type: 'iron' },
-    { name: '3 Iron', type: 'iron' },
-    { name: '4 Iron', type: 'iron', defaultSelected: true },
-    { name: '5 Iron', type: 'iron', defaultSelected: true },
-    { name: '6 Iron', type: 'iron', defaultSelected: true },
-    { name: '7 Iron', type: 'iron', defaultSelected: true },
-    { name: '8 Iron', type: 'iron', defaultSelected: true },
-    { name: '9 Iron', type: 'iron', defaultSelected: true },
-  ],
-  Wedges: [
-    { name: 'PW', type: 'wedge', defaultSelected: true },
-    { name: 'GW', type: 'wedge' },
-    { name: '50°', type: 'wedge' },
-    { name: '52°', type: 'wedge' },
-    { name: 'SW', type: 'wedge', defaultSelected: true },
-    { name: '54°', type: 'wedge' },
-    { name: '56°', type: 'wedge' },
-    { name: 'LW', type: 'wedge' },
-    { name: '58°', type: 'wedge' },
-    { name: '60°', type: 'wedge' },
-  ],
-  Putter: [{ name: 'Putter', type: 'putter', defaultSelected: true }],
-};
-
 const getIcon = (
-  type: ClubType,
+  type: string,
 ): ((props: { class?: string }) => JSX.Element) => {
   switch (type) {
     case 'driver':
@@ -85,22 +42,43 @@ const Onboarding = () => {
   const [selectedClubs, setSelectedClubs] = createSignal<Set<string>>(
     new Set(),
   );
+  const [availableClubs, setAvailableClubs] = createSignal<
+    Record<string, bagApi.ClubDefinition[]>
+  >({});
   const [isSubmitting, setIsSubmitting] = createSignal(false);
   const [error, setError] = createSignal('');
 
-  // Initialize with defaults
-  const defaults = new Set<string>();
-  Object.values(AVAILABLE_CLUBS)
-    .flat()
-    .forEach((club) => {
-      if (club.defaultSelected) defaults.add(club.name);
-    });
-  setSelectedClubs(defaults);
-
   onMount(async () => {
+    // Load User
     const user = await getUser();
     if (user) {
       setStep('clubs');
+    }
+
+    // Load Club Definitions
+    try {
+      const definitions = await bagApi.getClubDefinitions();
+      
+      // Group by category (preserving order from server which is sorted by sort_order)
+      const grouped: Record<string, bagApi.ClubDefinition[]> = {};
+      definitions.forEach((def) => {
+        if (!grouped[def.category]) {
+          grouped[def.category] = [];
+        }
+        grouped[def.category].push(def);
+      });
+      
+      setAvailableClubs(grouped);
+
+      // Set defaults
+      const defaults = new Set<string>();
+      definitions.forEach((club) => {
+        if (club.default_selected) defaults.add(club.name);
+      });
+      setSelectedClubs(defaults);
+    } catch (e) {
+      console.error('Failed to load club definitions', e);
+      setError('Failed to load club options. Please refresh.');
     }
   });
 
@@ -157,8 +135,10 @@ const Onboarding = () => {
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
-    const bagToCreate = Object.values(AVAILABLE_CLUBS)
-      .flat()
+    
+    const allDefs = Object.values(availableClubs()).flat();
+    
+    const bagToCreate = allDefs
       .filter((c) => selectedClubs().has(c.name))
       .reduce(
         (acc, club) => ({ ...acc, [club.name]: club.type }),
@@ -233,7 +213,12 @@ const Onboarding = () => {
           </header>
 
           <div class="space-y-8">
-            <For each={Object.entries(AVAILABLE_CLUBS)}>
+            <Show when={Object.keys(availableClubs()).length === 0}>
+                <div class="flex justify-center p-8">
+                    <div class="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            </Show>
+            <For each={Object.entries(availableClubs())}>
               {([category, clubs]) => (
                 <section>
                   <h2 class="text-xl font-semibold text-emerald-400 mb-4 px-2">
