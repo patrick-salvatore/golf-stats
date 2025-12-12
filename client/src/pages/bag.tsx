@@ -1,7 +1,6 @@
 import { createStore } from 'solid-js/store';
 import { For, Show, onMount, type JSX } from 'solid-js';
 import { useNavigate, useLocation } from '@solidjs/router';
-import * as bagApi from '../api/bag';
 import { ClubStore } from '~/lib/stores';
 import {
   DriverIcon,
@@ -11,7 +10,7 @@ import {
   WedgeIcon,
   PutterIcon,
 } from '../components/club_icons';
-import { setClubDefinitions } from '~/lib/storage';
+import { ClubDefinition } from '~/lib/db';
 
 const getIcon = (
   type: string,
@@ -37,7 +36,7 @@ const getIcon = (
 type OnboardingStore = {
   isLoading: boolean;
   selectedClubs: Set<string>;
-  availableClubs: Record<string, bagApi.ClubDefinition[]>;
+  availableClubs: Record<string, ClubDefinition[]>;
   isSubmitting: boolean;
   error: string;
 };
@@ -56,47 +55,24 @@ const Onboarding = () => {
   const isEditMode = () => location.pathname === '/bag';
 
   onMount(async () => {
-    // Check for existing clubs
-    const currentClubs = await ClubStore.getAll();
-    
-    // Strict onboarding check: If on /onboarding and we have clubs, go home.
-    if (!isEditMode() && currentClubs.length > 0) {
-      navigate('/', { replace: true });
-      return;
-    }
-
-    // Load Club Definitions
     try {
       setOnboardingStore('isLoading', true);
 
-      // Pre-fill existing clubs if present (for edit mode or revisit)
+      const currentClubs = await ClubStore.getAll();
+      const definitions = await ClubStore.getClubDefinitions();
+
+      if (!isEditMode() && currentClubs.length > 0) {
+        navigate('/', { replace: true });
+        return;
+      }
+
       if (currentClubs.length > 0) {
         const existingSet = new Set<string>();
         currentClubs.forEach((club) => {
           existingSet.add(club.name);
         });
         setOnboardingStore('selectedClubs', existingSet);
-      }
-
-      const definitions = await bagApi.getClubDefinitions();
-      await setClubDefinitions(definitions);
-
-      const grouped = definitions.reduce(
-        (grouped, def) => {
-          if (!grouped[def.category]) {
-            grouped[def.category] = [];
-          }
-          grouped[def.category].push(def);
-
-          return grouped;
-        },
-        {} as Record<string, bagApi.ClubDefinition[]>,
-      );
-
-      setOnboardingStore('availableClubs', grouped);
-
-      // Set defaults ONLY if no existing selection
-      if (currentClubs.length === 0) {
+      } else {
         const defaults = new Set<string>();
         definitions.forEach((club) => {
           if (club.default_selected) {
@@ -105,29 +81,6 @@ const Onboarding = () => {
         });
         setOnboardingStore('selectedClubs', defaults);
       }
-    } catch (e) {
-      console.error('Failed to load club definitions', e);
-      setOnboardingStore(
-        'error',
-        'Failed to load club options. Please refresh.',
-      );
-    } finally {
-      setOnboardingStore('isLoading', false);
-    }
-  });
-
-  onMount(async () => {
-    // Load Club Definitions
-    try {
-      setOnboardingStore('isLoading', true);
-
-      if ((await ClubStore.getAll()).length) {
-        
-      }
-
-
-      const definitions = await bagApi.getClubDefinitions();
-      await setClubDefinitions(definitions);
 
       const grouped = definitions.reduce(
         (grouped, def) => {
@@ -138,19 +91,9 @@ const Onboarding = () => {
 
           return grouped;
         },
-        {} as Record<string, bagApi.ClubDefinition[]>,
+        {} as Record<string, ClubDefinition[]>,
       );
-
       setOnboardingStore('availableClubs', grouped);
-
-      // Set defaults
-      const defaults = new Set<string>();
-      definitions.forEach((club) => {
-        if (club.default_selected) {
-          defaults.add(club.name);
-        }
-      });
-      setOnboardingStore('selectedClubs', defaults);
     } catch (e) {
       console.error('Failed to load club definitions', e);
       setOnboardingStore(
@@ -299,12 +242,15 @@ const Onboarding = () => {
                 when={onboaringStore.isSubmitting}
                 fallback={
                   <span>
-                    {isEditMode() ? 'Update Bag' : 'Complete Setup'} ({onboaringStore.selectedClubs.size} clubs)
+                    {isEditMode() ? 'Update Bag' : 'Complete Setup'} (
+                    {onboaringStore.selectedClubs.size} clubs)
                   </span>
                 }
               >
                 <div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>{isEditMode() ? 'Updating Bag...' : 'Creating Bag...'}</span>
+                <span>
+                  {isEditMode() ? 'Updating Bag...' : 'Creating Bag...'}
+                </span>
               </Show>
             </button>
           </div>

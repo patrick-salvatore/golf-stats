@@ -275,8 +275,8 @@ export function useClubsQuery() {
         setClubs(currentClubs);
 
         // Enforce club setup: if no clubs and not on onboarding, redirect
-        if (currentClubs.length === 0 && location.pathname !== '/onboarding') {
-          navigate('/onboarding', { replace: true });
+        if (currentClubs.length === 0 && location.pathname !== '/bag') {
+          navigate('/bag', { replace: true });
         }
       });
   });

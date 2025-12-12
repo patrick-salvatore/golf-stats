@@ -2,10 +2,7 @@ import { createEffect, createSignal, onCleanup } from "solid-js";
 import maplibregl from "maplibre-gl";
 import * as turf from "@turf/turf";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { StoredHoleDefinition } from "~/lib/storage";
-
-// Use StoredHoleDefinition as HoleDefinition
-type HoleDefinition = StoredHoleDefinition;
+import type { HoleDefinition } from "~/lib/db";
 
 interface HoleMapProps {
   holeDef: HoleDefinition | null;

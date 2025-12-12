@@ -45,7 +45,7 @@ export const HoleInputForm = (props: any) => {
           <div class="text-right">
             <span class="text-xs text-slate-400 block">Total</span>
             <span class="font-mono font-bold text-white text-lg">
-              {props.round.holes.reduce((acc, h) => acc + h.score, 0) +
+              {props.round.holes.reduce((acc: number, h: any) => acc + h.score, 0) +
                 (props.holeInput.score - props.holeInput.par)}
             </span>
           </div>
@@ -81,7 +81,7 @@ export const HoleInputForm = (props: any) => {
           <HoleMap
             holeDef={
               props.round.holeDefinitions.find(
-                (h) => h.holeNumber === props.round.currentHoleNum,
+                (h: any) => h.holeNumber === props.round.currentHoleNum,
               ) || null
             }
             userLat={props.tracker.userLat}
@@ -96,7 +96,7 @@ export const HoleInputForm = (props: any) => {
                 Club Sequence
               </label>
               <span class="text-[10px] text-slate-500 font-mono">
-                {props.holeInput.selectedClubs.map((c) => c.name).join(' → ')}
+                {props.holeInput.selectedClubs.map((c: any) => c.name).join(' → ')}
               </span>
             </div>
             <ClubSelector

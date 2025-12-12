@@ -1,4 +1,5 @@
 import api from './client';
+import { ServerCourse } from '~/lib/stores';
 
 export async function searchCourses(query: string) {
   const response = await api.get(`/courses`, { params: { q: query } });
@@ -7,12 +8,12 @@ export async function searchCourses(query: string) {
 
 export async function getMyCourses() {
   const response = await api.get(`/courses`, { params: { filter: 'mine' } });
-  return response.data.data;
+  return response.data.data as ServerCourse[]
 }
 
 export async function getCourse(id: number) {
   const response = await api.get(`/courses/${id}`);
-  return response.data.data;
+  return response.data.data as ServerCourse
 }
 
 export async function createCourse(course: unknown) {

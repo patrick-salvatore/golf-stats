@@ -31,6 +31,7 @@ export function AppProvider(props: { children: JSX.Element }) {
         syncStatus: 1 as const,
         createdAt: r.createdAt,
         endedAt: r.endedAt,
+        holes: [],
       }));
   });
 

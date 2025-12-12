@@ -17,6 +17,5 @@ defmodule GolfStatsServer.Bag.ClubDefinition do
     club_definition
     |> cast(attrs, [:name, :type, :category, :default_selected, :sort_order])
     |> validate_required([:name, :type, :category])
-    |> unique_constraint(:name)
   end
 end

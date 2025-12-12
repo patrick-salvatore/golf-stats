@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/solid-query';
 import * as bagApi from '~/api/bag';
-import { setClubs, type StoredClub } from '~/lib/storage';
+import { ClubStore, type ServerClub } from '~/lib/stores';
 
 // Query keys factory
 export const BAG_QUERY_KEYS = {
@@ -14,11 +14,11 @@ export const BAG_QUERY_KEYS = {
 export function useBagQuery() {
   return useQuery(() => ({
     queryKey: BAG_QUERY_KEYS.ALL,
-    queryFn: async (): Promise<StoredClub[]> => {
+    queryFn: async (): Promise<ServerClub[]> => {
       const clubs = await bagApi.getBag();
       // Also save to local storage for offline access
       if (clubs && Array.isArray(clubs)) {
-        await setClubs(clubs);
+        await ClubStore.setFromServer(clubs);
       }
       return clubs ?? [];
     },
@@ -38,7 +38,7 @@ export function useCreateBagMutation() {
     onSuccess: (data) => {
       // Update local cache
       if (data && Array.isArray(data)) {
-        setClubs(data);
+        ClubStore.setFromServer(data);
       }
       // Invalidate bag query to refetch
       queryClient.invalidateQueries({ queryKey: BAG_QUERY_KEYS.ALL });

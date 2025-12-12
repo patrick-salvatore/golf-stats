@@ -1,6 +1,6 @@
 import { createSignal, Show } from 'solid-js';
 import * as userApi from '../api/users';
-import { setUser } from '~/lib/storage';
+import { UserStore } from '~/lib/stores';
 import { ClubStore } from '~/lib/stores';
 import { AxiosError } from 'axios';
 
@@ -20,7 +20,7 @@ const Login = () => {
       const user = response.data;
 
       // Save user to local storage
-      await setUser(user);
+      await UserStore.saveUser(user);
 
       // Check if user already has a bag
       try {

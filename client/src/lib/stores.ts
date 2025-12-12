@@ -8,6 +8,7 @@ import {
   type HoleDefinition,
   type SyncQueueItem,
   User,
+  ClubDefinition,
 } from './db';
 import * as roundApi from '~/api/rounds';
 import * as bagApi from '~/api/bag';
@@ -70,6 +71,7 @@ export type ServerCourse = {
   state: string;
   lat: number;
   lng: number;
+  status?: 'draft' | 'published';
   hole_definitions?: ServerHoleDefinition[];
 };
 
@@ -163,7 +165,6 @@ export const RoundStore = {
       }),
     );
 
-    // order by createdAt desc
     return roundsWithHoles.sort((a, b) => {
       const aT = new Date(a.createdAt ?? 0).getTime();
       const bT = new Date(b.createdAt ?? 0).getTime();
@@ -179,7 +180,6 @@ export const RoundStore = {
 
     const roundsWithHoles = await Promise.all(
       rounds.map(async (r) => {
-        // if no local id (unlikely), return a minimal LocalRound
         if (!r.id)
           return {
             ...r,
@@ -222,7 +222,6 @@ export const RoundStore = {
 
     const created = { ...newRound, id } as LocalRound;
 
-    // optionally create holes if provided
     if (round.holes && round.holes.length > 0) {
       const holesToAdd: Hole[] = round.holes.map((h) => ({
         ...h,
@@ -232,14 +231,12 @@ export const RoundStore = {
       await db.holes.bulkAdd(holesToAdd);
     }
 
-    // queue create to sync
     await addToSyncQueue('round', id as number, 'create', created);
 
-    // try immediate sync
     if (isOnline()) {
       try {
         await RoundStore.syncToServer(id as number);
-        // remove queue item(s) that correspond to this local id (processSync will normally remove)
+
         const qi = await db.syncQueue
           .where('entity')
           .equals('round')
@@ -247,7 +244,6 @@ export const RoundStore = {
           .first();
         if (qi?.id) await removeFromSyncQueue(qi.id);
       } catch (e) {
-        // keep in queue for later
         console.warn('Round create sync failed, will retry later', e);
       }
     }
@@ -271,16 +267,12 @@ export const RoundStore = {
 
     const updated = await RoundStore.getById(id);
 
-    // queue sync if modified
     if (newSyncStatus === SyncStatus.MODIFIED) {
       await addToSyncQueue('round', id, 'update', updated ?? { id });
       if (isOnline()) {
-        // attempt immediate sync
         try {
           await RoundStore.syncToServer(id);
-        } catch (e) {
-          // error logged inside syncToServer
-        }
+        } catch (e) {}
       }
     }
 
@@ -313,7 +305,6 @@ export const RoundStore = {
         });
       }
     } else {
-      // never synced with server — remove locally
       await db.transaction('rw', [db.rounds, db.holes], async () => {
         await db.holes.where('roundId').equals(id).delete();
         await db.rounds.delete(id);
@@ -325,7 +316,6 @@ export const RoundStore = {
     const round = await RoundStore.getById(id);
     if (!round) return null;
 
-    // prepare payload
     const holes = (
       round.holes ?? (await db.holes.where('roundId').equals(id).toArray())
     ).map((h) => ({
@@ -353,19 +343,16 @@ export const RoundStore = {
 
     try {
       const serverRound = await roundApi.createRound(payload);
-      // update local mapping and mark synced
+
       await db.rounds.update(id, {
         serverId: serverRound.id,
         syncStatus: SyncStatus.SYNCED,
       });
 
-      // update holes serverId if the API returns them (not assumed here)
-      // TODO: if server returns hole ids, reconcile them here.
-
       return serverRound;
     } catch (err) {
       console.error('Failed to sync round:', err);
-      // keep local state and queue will retry later
+
       await addToSyncQueue('round', id, 'update', payload);
       throw err;
     }
@@ -383,7 +370,6 @@ export const RoundStore = {
             .first();
 
           if (existing) {
-            // if local is not modified, overwrite
             if (existing.syncStatus === SyncStatus.SYNCED) {
               await db.rounds.update(existing.id!, {
                 courseId: sr.course_id,
@@ -393,7 +379,7 @@ export const RoundStore = {
                 createdAt: sr.created_at,
                 endedAt: sr.ended_at,
               });
-              // replace holes
+
               await db.holes.where('roundId').equals(existing.id!).delete();
               if (sr.holes && sr.holes.length > 0) {
                 const localHoles: Hole[] = sr.holes.map((h) => ({
@@ -414,7 +400,6 @@ export const RoundStore = {
               }
             }
           } else {
-            // create new local round and holes
             const localRound: Round = {
               serverId: sr.id,
               courseId: sr.course_id ?? 0,
@@ -461,7 +446,6 @@ export const HoleStore = {
     return db.holes.where('roundId').equals(roundId).toArray();
   },
 
-  // Add or replace a hole by round + holeNumber
   async addOrUpdate(
     roundId: number,
     hole: Omit<LocalHole, 'id'>,
@@ -482,7 +466,7 @@ export const HoleStore = {
             : existing.syncStatus,
       };
       await db.holes.put(merged);
-      // queue update for round-level sync (simpler model) or hole-level queueing if desired
+
       await addToSyncQueue('round', roundId, 'update', {
         holeNumber: hole.holeNumber,
       });
@@ -523,7 +507,6 @@ export const HoleStore = {
 
   async delete(id: number): Promise<void> {
     await db.holes.delete(id);
-    // If you want to queue hole deletion on server, you'd find the parent round and enqueue round update/delete
   },
 };
 
@@ -571,7 +554,7 @@ export const ClubStore = {
         return ClubStore.getAll();
       } catch (err) {
         console.error('Failed to create bag on server:', err);
-        // queue for later
+
         await addToSyncQueue('club', 0, 'create', bag);
         return tempClubs;
       }
@@ -621,11 +604,27 @@ export const ClubStore = {
       return ClubStore.getAll();
     }
   },
+
+  async setClubDefinitions(definitions: ClubDefinition[]) {
+    await db.club_definitions.bulkAdd(definitions);
+  },
+
+  async getClubDefinitions() {
+    const localDefinitions = db.club_definitions.toArray();
+
+    if (!(await localDefinitions).length) {
+      const definitions = await bagApi.getClubDefinitions();
+      await this.setClubDefinitions(definitions);
+
+      return definitions;
+    }
+
+    return localDefinitions;
+  },
 };
 
 export const CourseStore = {
   async getAll(): Promise<LocalCourse[]> {
-    // note: holeDefinitions are stored in separate table; provide them only if requested
     const courses = await db.courses.toArray();
     return courses as LocalCourse[];
   },
@@ -633,7 +632,11 @@ export const CourseStore = {
   async getById(id: number): Promise<LocalCourse | null> {
     const c = await db.courses.get(id);
     if (!c) return null;
-    return c as LocalCourse;
+    const holeDefinitions = await db.hole_definitions
+      .where('courseId')
+      .equals(id)
+      .toArray();
+    return { ...c, holeDefinitions } as LocalCourse;
   },
 
   async getByServerId(serverId: number): Promise<LocalCourse | null> {
@@ -690,7 +693,6 @@ export const CourseStore = {
                   await db.hole_definitions.bulkAdd(holes);
                 }
               } else {
-                // update course metadata if not locally modified
                 if (existing.syncStatus === SyncStatus.SYNCED) {
                   await db.courses.update(existing.id!, {
                     name: sc.name,
@@ -705,7 +707,6 @@ export const CourseStore = {
           },
         );
 
-        // return transformed list
         return serverCourses.map((sc) => ({
           serverId: sc.id,
           name: sc.name,
@@ -718,7 +719,6 @@ export const CourseStore = {
         })) as LocalCourse[];
       }
 
-      // offline fallback: local search
       const all = await CourseStore.getAll();
       const q = query.toLowerCase();
       return all.filter(
@@ -783,7 +783,6 @@ export const CourseStore = {
 
     if (!isOnline()) throw new Error('Must be online to publish course');
 
-    // gather hole definitions from normalized table
     const holeDefs = await db.hole_definitions
       .where('courseId')
       .equals(courseId)
@@ -813,16 +812,13 @@ export const CourseStore = {
       })),
     };
 
-    // create on server
     const serverCourse = await courseApi.createCourse(payload);
 
-    // after successful publish, remove local draft (as requested)
     await db.transaction('rw', [db.courses, db.hole_definitions], async () => {
       await db.hole_definitions.where('courseId').equals(courseId).delete();
       await db.courses.delete(courseId);
     });
 
-    // Optionally fetch back the published course to cache it:
     await CourseStore.fetchById(serverCourse.id);
   },
 
@@ -835,7 +831,6 @@ export const CourseStore = {
     };
     const id = await db.courses.add(newCourse);
 
-    // normalize and add hole definitions if passed inline
     if (
       (course as LocalCourse).holeDefinitions &&
       (course as LocalCourse).holeDefinitions!.length > 0
@@ -848,7 +843,6 @@ export const CourseStore = {
       await db.hole_definitions.bulkAdd(hd);
     }
 
-    // queue create
     await addToSyncQueue('course', id as number, 'create', {
       ...newCourse,
       id,
@@ -856,7 +850,6 @@ export const CourseStore = {
 
     if (isOnline()) {
       try {
-        // prepare payload using normalized hole_definitions
         const holeDefs = await db.hole_definitions
           .where('courseId')
           .equals(id as number)
@@ -885,8 +878,6 @@ export const CourseStore = {
           syncStatus: SyncStatus.SYNCED,
         });
 
-        // update hole_definitions' serverId if server returns them (not implemented here)
-        // remove queue item for this course
         const qi = await db.syncQueue
           .where('entity')
           .equals('course')
@@ -902,7 +893,6 @@ export const CourseStore = {
         };
       } catch (err) {
         console.error('Failed to sync course create:', err);
-        // leave queued
       }
     }
 
@@ -933,7 +923,7 @@ export const CourseStore = {
           if (existing?.id) {
             localCourseId = existing.id;
             await db.courses.put({ ...courseRecord, id: localCourseId });
-            // replace hole_definitions
+
             await db.hole_definitions
               .where('courseId')
               .equals(localCourseId)
@@ -1019,7 +1009,6 @@ export async function processSync(): Promise<void> {
                 await db.rounds.delete(item.entityId);
               });
             } else {
-              // If serverId unknown, just remove local record
               await db.transaction('rw', [db.rounds, db.holes], async () => {
                 await db.holes.where('roundId').equals(item.entityId).delete();
                 await db.rounds.delete(item.entityId);
@@ -1042,7 +1031,6 @@ export async function processSync(): Promise<void> {
 
         case 'course': {
           if (item.operation === 'create') {
-            // payload is the local course data object with id; we need to map normalized hole_definitions
             const localCourseId = item.entityId;
             const course = await db.courses.get(localCourseId);
             if (!course) break;
@@ -1074,9 +1062,7 @@ export async function processSync(): Promise<void> {
               serverId: serverCourse.id,
               syncStatus: SyncStatus.SYNCED,
             });
-            // remove queue item later (after successful run)
           } else if (item.operation === 'update') {
-            // course updates: push changed hole definitions or course metadata
             const localCourseId = item.entityId;
             const course = await db.courses.get(localCourseId);
             if (!course) break;
@@ -1085,7 +1071,6 @@ export async function processSync(): Promise<void> {
               .equals(localCourseId)
               .toArray();
 
-            // Use serverId if available
             const serverId = course.serverId;
             const payload = {
               name: course.name,
@@ -1111,7 +1096,6 @@ export async function processSync(): Promise<void> {
                 syncStatus: SyncStatus.SYNCED,
               });
             } else {
-              // fall back to create
               const serverCourse = await courseApi.createCourse(payload);
               await db.courses.update(localCourseId, {
                 serverId: serverCourse.id,
@@ -1122,13 +1106,10 @@ export async function processSync(): Promise<void> {
           break;
         }
 
-        // If you want holeDefinition-specific sync operations, add case 'holeDefinition' here.
-
         default:
           console.warn('Unknown sync entity:', item.entity);
       }
 
-      // if successful, remove queue item
       if (item.id) await removeFromSyncQueue(item.id);
     } catch (err) {
       console.error('Sync item failed:', item, err);

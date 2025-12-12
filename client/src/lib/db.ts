@@ -147,7 +147,8 @@ db.version(1).stores({
   courses: '++id, serverId, name, status, syncStatus',
 
   // Hole Definitions (normalized)
-  hole_definitions: '++id, courseId, holeNumber, serverId, syncStatus',
+  hole_definitions:
+    '++id, courseId, holeNumber, [courseId+holeNumber], serverId, syncStatus',
 
   // Rounds + Holes
   rounds: '++id, courseId, serverId, date, syncStatus',

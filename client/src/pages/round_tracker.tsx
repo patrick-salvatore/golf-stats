@@ -16,13 +16,13 @@ import { SyncStatus } from '~/lib/db';
 import type {
   FairwayStatus,
   GIRStatus,
-  HoleDefinition as StoredHoleDefinition,
+  HoleDefinition,
 } from '~/lib/db';
 
 import { RoundSetup } from '~/components/round_setup';
 import { RoundSummary } from '~/components/round_summary';
 import { HoleDetailView } from '~/components/hole_detail_view';
-import { HoleInputForm } from './hole_input_form';
+import { HoleInputForm } from '../components/hole_input_form';
 
 /* -------------------------
    Local UI types (internal)
@@ -60,7 +60,7 @@ interface RoundState {
   id: number | null;
   data: LocalRound | null;
   courseName: string;
-  holeDefinitions: StoredHoleDefinition[];
+  holeDefinitions: Partial<HoleDefinition>[];
   holes: HoleUI[];
   currentHoleNum: number;
 }
@@ -230,7 +230,7 @@ export default function RoundTracker() {
 
       // courseId should use serverId if available, else local id
       let courseId = course?.serverId ?? course?.id;
-      let holeDefs: StoredHoleDefinition[] = [];
+      let holeDefs: Partial<HoleDefinition>[] = [];
 
       if (courseId) {
         try {
@@ -292,7 +292,7 @@ export default function RoundTracker() {
 
     try {
       // Save via HoleStore (guarantees proper typing & DB consistency)
-      const saved = await HoleStore.addOrUpdate(round.id, holePayload);
+      await HoleStore.addOrUpdate(round.id, holePayload);
 
       // refresh holes from DB to ensure authoritative shape & serverIds etc.
       await refreshHolesFromDb(round.id);
@@ -372,6 +372,7 @@ export default function RoundTracker() {
       greensideBunker: h.greensideBunker,
       proximityToHole: h.proximityToHole,
       clubIds: h.clubIds,
+      syncStatus: SyncStatus.PENDING,
     }));
 
     try {
@@ -496,7 +497,7 @@ export default function RoundTracker() {
       }
 
       // Load course hole definitions (normalized)
-      let holeDefs: StoredHoleDefinition[] = [];
+      let holeDefs: Partial<HoleDefinition>[] = [];
       if (roundData.courseId) {
         try {
           // fetchById expects serverId; support both serverId/local id

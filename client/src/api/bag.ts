@@ -1,12 +1,5 @@
+import { ClubDefinition } from "~/lib/db";
 import api from "./client";
-
-export interface ClubDefinition {
-  id: number;
-  name: string;
-  type: string;
-  category: string;
-  default_selected: boolean;
-}
 
 // Bag API methods
 export async function getBag() {

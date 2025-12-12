@@ -18,7 +18,7 @@ export default function CourseManager() {
   createEffect(async () => {
     try {
       const data = await courseApi.getMyCourses();
-      setCourses(data);
+      setCourses(data as Course[]);
     } catch (e) {
       console.error('Failed to load courses', e);
     } finally {

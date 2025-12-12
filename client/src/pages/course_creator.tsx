@@ -1,11 +1,10 @@
-// CourseBuilder.tsx
 import {
   createSignal,
   Show,
   For,
   onMount,
-  createEffect,
   createMemo,
+  createEffect,
 } from 'solid-js';
 import { createShortcut } from '@solid-primitives/keyboard';
 import { useNavigate, useParams } from '@solidjs/router';
@@ -21,8 +20,8 @@ type TeeBox = {
   name: string;
   color: string;
   yardage: number;
-  lat?: number;
-  lng?: number;
+  lat: number;
+  lng: number;
 };
 type Hole = {
   holeNumber: number;
@@ -30,6 +29,10 @@ type Hole = {
   handicap: number;
   lat?: number;
   lng?: number;
+  front_lat?: number;
+  front_lng?: number;
+  back_lat?: number;
+  back_lng?: number;
   geo_features?: any;
   tee_boxes?: TeeBox[];
 };
@@ -41,6 +44,10 @@ type InitFormData = {
   lat: number;
   lng: number;
 };
+
+type MapMode = 'view' | 'pick_location' | 'draw' | 'edit';
+
+type DrawTool = 'polygon' | 'circle' | 'slope';
 
 type PickContext =
   | { type: 'tee_box'; index: number }
@@ -57,39 +64,14 @@ const DEFAULT_HOLES: Hole[] = Array.from({ length: 18 }, (_, i) => ({
   tee_boxes: [],
 }));
 
-const calculateDistance = (
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-) => {
-  const earthRadiusMeters = 6371e3;
-  const lat1Radians = (lat1 * Math.PI) / 180;
-  const lat2Radians = (lat2 * Math.PI) / 180;
-  const deltaLatRadians = ((lat2 - lat1) * Math.PI) / 180;
-  const deltaLngRadians = ((lng2 - lng1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(deltaLatRadians / 2) * Math.sin(deltaLatRadians / 2) +
-    Math.cos(lat1Radians) *
-      Math.cos(lat2Radians) *
-      Math.sin(deltaLngRadians / 2) *
-      Math.sin(deltaLngRadians / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const meters = earthRadiusMeters * c;
-  return Math.round(meters * 1.09361); // yards
-};
-
 export default function CourseBuilder() {
   const navigate = useNavigate();
   const params = useParams();
 
-  // -- Global State --
   const [step, setStep] = createSignal<BuilderStep>('init');
   const [loading, setLoading] = createSignal(false);
   const [course, setCourse] = createSignal<LocalCourse | null>(null);
 
-  // -- Init State --
   const [initForm, setInitForm] = createSignal<InitFormData>({
     name: '',
     city: 'Augusta',
@@ -99,13 +81,27 @@ export default function CourseBuilder() {
   });
   const [isPickingLocation, setIsPickingLocation] = createSignal(false);
 
-  // -- Builder State --
   const [selectedHoleNum, setSelectedHoleNum] = createSignal(1);
-  const [mapMode, setMapMode] = createSignal<'view' | 'pick_location' | 'draw'>(
-    'view',
-  );
+  const [mapMode, setMapMode] = createSignal<MapMode>('view');
+  const [drawTool, setDrawTool] = createSignal<DrawTool>('polygon');
   const [pickContext, setPickContext] = createSignal<PickContext>(null);
-  const [isEditingGreen, setIsEditingGreen] = createSignal(false);
+  const [, setIsEditingGreen] = createSignal(false);
+
+  const ensureHoles = (c: LocalCourse): LocalCourse => {
+    const existing = c.holeDefinitions || [];
+    if (existing.length >= 18) return c;
+
+    const merged = DEFAULT_HOLES.map((def) => {
+      const found = existing.find((h) => h.holeNumber === def.holeNumber);
+      return (
+        found || {
+          ...def,
+          courseId: c.id,
+        }
+      );
+    });
+    return { ...c, holeDefinitions: merged };
+  };
 
   onMount(async () => {
     if (params.id) {
@@ -113,16 +109,16 @@ export default function CourseBuilder() {
       try {
         const id = parseInt(params.id);
         const data = await CourseStore.getById(id);
-        console.log(data)
+
         if (data) {
-          setCourse(data);
+          setCourse(ensureHoles(data));
           setStep('builder');
           return;
         }
 
         const serverCourse = await CourseStore.fetchById(id);
         if (serverCourse) {
-          setCourse(serverCourse);
+          setCourse(ensureHoles(serverCourse));
           setStep('builder');
           return;
         }
@@ -140,10 +136,7 @@ export default function CourseBuilder() {
   });
 
   createEffect(() => {
-    const _course = course();
-    if (_course) {
-      CourseStore.localUpdateCourse(_course);
-    }
+    console.log(course());
   });
 
   createShortcut(
@@ -164,6 +157,52 @@ export default function CourseBuilder() {
     const ctx = pickContext();
     if (!ctx) return null;
     return ctx;
+  });
+
+  const mapMarkers = createMemo(() => {
+    if (!course()) {
+      return;
+    }
+
+    const markers = [
+      ...(currentHole()?.tee_boxes || []).map((t) => ({
+        lat: t.lat,
+        lng: t.lng,
+        color: t.color,
+      })),
+    ];
+
+    const holeDefinitions = course()!.holeDefinitions || [];
+
+    if (mapMode() === 'view') {
+      markers.push(
+        ...holeDefinitions.flatMap((h) => {
+          const marks: any[] = [];
+          if (h.lat && h.lng)
+            marks.push({
+              lat: h.lat,
+              lng: h.lng,
+              color: '#ffffff',
+              label: h.handicap?.toString(),
+            });
+          if (h.front_lat && h.front_lng)
+            marks.push({
+              lat: h.front_lat,
+              lng: h.front_lng,
+              color: '#ef4444',
+            });
+          if (h.back_lat && h.back_lng)
+            marks.push({
+              lat: h.back_lat,
+              lng: h.back_lng,
+              color: '#3b82f6',
+            });
+          return marks;
+        }),
+      );
+    }
+
+    return markers;
   });
 
   const handlePlaceSelect = (place: {
@@ -231,7 +270,6 @@ export default function CourseBuilder() {
         updatedTeeBoxes[idx] = { ...(updatedTeeBoxes[idx] || {}), lat, lng };
         updateHole(selectedHoleNum(), { tee_boxes: updatedTeeBoxes });
       } else if (context.type === 'pin') {
-        // position front/middle/back -> we use the same updateHole entry
         if (context.position === 'middle') {
           updateHole(selectedHoleNum(), { lat, lng });
         } else if (context.position === 'front') {
@@ -253,26 +291,21 @@ export default function CourseBuilder() {
     );
   };
 
-  // updateHole updates local course state only; persist via CourseStore.updateHole
   const updateHole = (holeNum: number, data: Partial<Hole>) => {
     if (!course()) return;
     const holes = course()!.holeDefinitions.map((h) =>
       h.holeNumber === holeNum ? { ...h, ...data } : h,
     );
     setCourse({ ...course()!, holeDefinitions: holes });
-    // persist small change to store (course id must exist)
+
     if (course()!.id) {
-      CourseStore.updateHole(course()!.id, holeNum, data as any).catch((e) =>
+      CourseStore.updateHole(course()!.id!, holeNum, data as any).catch((e) =>
         console.warn('Failed to persist hole update:', e),
       );
     }
   };
 
-  // --- New green handlers for MapEditor callbacks ---
-
-  // Called when user finishes drawing a green (onDrawCreate)
-  const handleGreenCreate = async (feature: GeoJSON.Feature) => {
-    // Append feature to the current hole's geo_features and persist
+  const handleFeatureCreate = async (feature: GeoJSON.Feature) => {
     const hole = currentHole();
     if (!hole) return;
 
@@ -280,24 +313,24 @@ export default function CourseBuilder() {
       type: 'FeatureCollection',
       features: [],
     };
+    const type = (feature.properties as any)?.type || 'green';
     const newFeature = {
       ...feature,
       properties: {
         ...(feature.properties || {}),
-        type: 'green',
+        type,
         hole: hole.holeNumber,
       },
     };
-
     const newGeo = {
       ...currentGeo,
       features: [...(currentGeo.features || []), newFeature],
     };
-    await updateHole(selectedHoleNum(), { geo_features: newGeo });
+    updateHole(selectedHoleNum(), { geo_features: newGeo });
+    setMapMode('view');
   };
 
-  // Called when a green is edited (vertices moved/inserted/deleted)
-  const handleGreenUpdate = async (feature: GeoJSON.Feature) => {
+  const handleFeatureUpdate = async (feature: GeoJSON.Feature) => {
     const hole = currentHole();
     if (!hole) return;
     const currentGeo = hole.geo_features || {
@@ -305,35 +338,35 @@ export default function CourseBuilder() {
       features: [],
     };
 
-    // Find the matching feature by id (properties.id)
     const incomingId = (feature.properties as any)?.id;
     if (!incomingId) {
-      // If no id, nothing we can match reliably — append fallback
       const newGeo = {
         ...currentGeo,
         features: [...(currentGeo.features || []), feature],
       };
-      await updateHole(selectedHoleNum(), { geo_features: newGeo });
+      updateHole(selectedHoleNum(), { geo_features: newGeo });
       return;
     }
-
     const updatedFeatures = (currentGeo.features || []).map((f: any) =>
       (f.properties as any)?.id === incomingId ? feature : f,
     );
+    const newGeo = { ...currentGeo, features: updatedFeatures };
+    updateHole(selectedHoleNum(), { geo_features: newGeo });
+  };
+
+  const handleFeatureDelete = (featureId: string) => {
+    const hole = currentHole();
+    if (!hole) return;
+    const currentGeo = hole.geo_features;
+    if (!currentGeo?.features) return;
+
+    const updatedFeatures = currentGeo.features.filter(
+      (f: any) => (f.properties as any)?.id !== featureId,
+    );
 
     const newGeo = { ...currentGeo, features: updatedFeatures };
-    await updateHole(selectedHoleNum(), { geo_features: newGeo });
-  };
-
-  // Called when user wants to edit a green via a UI toggle
-  const toggleEditGreen = (enable: boolean) => {
-    setIsEditingGreen(enable);
-    setMapMode(enable ? 'draw' : 'view');
-  };
-
-  const handleGreenEditMode = (enable: boolean) => {
-    setIsEditingGreen(enable);
-    setMapMode(enable ? 'view' : 'view'); // editing handled inside MapEditor via clicks
+    updateHole(selectedHoleNum(), { geo_features: newGeo });
+    setMapMode('view');
   };
 
   const handlePublish = async () => {
@@ -507,20 +540,12 @@ export default function CourseBuilder() {
                 <h1 class="font-bold text-white">{c().name}</h1>
               </div>
 
-              <div class="flex gap-2 items-center">
-                <button
-                  onClick={() => toggleEditGreen(!isEditingGreen())}
-                  class="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded text-sm"
-                >
-                  Toggle Green Edit
-                </button>
-                <button
-                  onClick={handlePublish}
-                  class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors"
-                >
-                  Finish & Publish
-                </button>
-              </div>
+              <button
+                onClick={handlePublish}
+                class="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors"
+              >
+                Finish & Publish
+              </button>
             </header>
 
             <div class="flex-1 flex overflow-hidden">
@@ -530,7 +555,9 @@ export default function CourseBuilder() {
                     {(hole) => (
                       <button
                         onClick={() => {
-                          setSelectedHoleNum(hole.handicap);
+                          setSelectedHoleNum(
+                            hole.holeNumber ?? hole.handicap ?? 1,
+                          );
                           setMapMode('view');
                         }}
                         class={`aspect-square rounded-lg font-bold text-sm flex items-center justify-center transition-all ${
@@ -539,7 +566,7 @@ export default function CourseBuilder() {
                             : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
                         }`}
                       >
-                        {hole.handicap}
+                        {hole.holeNumber}
                       </button>
                     )}
                   </For>
@@ -564,6 +591,8 @@ export default function CourseBuilder() {
                         <input
                           type="number"
                           class="input-field w-full"
+                          min={3}
+                          max={5}
                           value={currentHole()?.par}
                           onInput={(e) =>
                             updateHole(selectedHoleNum(), {
@@ -577,6 +606,8 @@ export default function CourseBuilder() {
                         <input
                           type="number"
                           class="input-field w-full"
+                          min={1}
+                          max={18}
                           value={currentHole()?.handicap}
                           onInput={(e) =>
                             updateHole(selectedHoleNum(), {
@@ -781,78 +812,69 @@ export default function CourseBuilder() {
                       Map Actions
                     </h3>
 
-                    <button
-                      onClick={() =>
-                        setMapMode((m) => (m === 'draw' ? 'view' : 'draw'))
-                      }
-                      class={`w-full py-3 px-4 rounded-xl flex items-center justify-between transition-all ${mapMode() === 'draw' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
-                    >
-                      <span class="font-bold text-sm">Draw Green Shape</span>
-                      <div
-                        class={`w-3 h-3 rounded-full ${currentHole()?.geo_features?.features?.length ? 'bg-emerald-400' : 'bg-slate-600'}`}
-                      />
-                    </button>
+                    <div class="space-y-2">
+                      <button
+                        onClick={() => {
+                          setMapMode('draw');
+                          setDrawTool('polygon');
+                        }}
+                        class={`w-full py-3 px-4 rounded-xl flex items-center justify-between transition-all ${mapMode() === 'draw' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                      >
+                        <span class="font-bold text-sm">Draw Green Shape</span>
+                        <div
+                          class={`w-3 h-3 rounded-full ${currentHole()?.geo_features?.features?.length ? 'bg-emerald-400' : 'bg-slate-600'}`}
+                        />
+                      </button>
+                      {/* <div class="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => {
+                            setDrawTool('polygon');
+                            setMapMode('draw');
+                          }}
+                          class={`py-3 px-4 rounded-xl flex items-center justify-center transition-all ${mapMode() === 'draw' && drawTool() === 'polygon' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                        >
+                          <span class="font-bold text-xs">Draw Polygon</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setDrawTool('circle');
+                            setMapMode('draw');
+                          }}
+                          class={`py-3 px-4 rounded-xl flex items-center justify-center transition-all ${mapMode() === 'draw' && drawTool() === 'circle' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                        >
+                          <span class="font-bold text-xs">Draw Circle</span>
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setDrawTool('slope');
+                          setMapMode('draw');
+                        }}
+                        class={`w-full py-3 px-4 rounded-xl flex items-center justify-center transition-all ${mapMode() === 'draw' && drawTool() === 'slope' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                      >
+                        <span class="font-bold text-sm">Add Slope Point</span>
+                      </button> */}
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div class="flex-1 relative bg-black">
                 <MapEditor
-                  zoom={15}
-                  mode={isEditingGreen() ? 'edit' : mapMode()}
-                  drawMode="polygon"
+                  zoom={16}
+                  mode={mapMode()}
+                  drawMode={drawTool()}
                   center={
                     currentHole()?.lat && currentHole()?.lng
                       ? [currentHole()!.lng!, currentHole()!.lat!]
                       : [course()!.lng, course()!.lat]
                   }
-                  onLocationPick={handleLocationPick}
-                  onDrawCreate={(feat) => {
-                    // when finished drawing a new green in MapEditor
-                    handleGreenCreate(feat);
-                    // set mode back to view
-                    setMapMode('view');
-                  }}
-                  onDrawUpdate={(feat) => {
-                    // when editing vertices in MapEditor
-                    handleGreenUpdate(feat);
-                  }}
-                  markers={[
-                    ...course()!.holeDefinitions.flatMap((h) => {
-                      const marks: any[] = [];
-                      if (h.lat && h.lng)
-                        marks.push({
-                          lat: h.lat,
-                          lng: h.lng,
-                          color: '#ffffff',
-                          label: h.handicap?.toString(),
-                        });
-                      if (h.front_lat && h.front_lng)
-                        marks.push({
-                          lat: h.front_lat,
-                          lng: h.front_lng,
-                          color: '#ef4444',
-                        });
-                      if (h.back_lat && h.back_lng)
-                        marks.push({
-                          lat: h.back_lat,
-                          lng: h.back_lng,
-                          color: '#3b82f6',
-                        });
-                      return marks;
-                    }),
-                    ...(currentHole()?.tee_boxes || []).map((t) => ({
-                      lat: t.lat,
-                      lng: t.lng,
-                      color: t.color,
-                    })),
-                  ]}
+                  markers={mapMarkers()}
                   initialGeoJSON={{
                     type: 'FeatureCollection',
                     features: (course()!.holeDefinitions || [])
                       .flatMap((h) => h.geo_features?.features || [])
                       .map((f: any) => {
-                        // ensure features have id property for editing
                         if (!f.properties) f.properties = {};
                         if (!f.properties.id)
                           f.properties.id =
@@ -860,6 +882,13 @@ export default function CourseBuilder() {
                             `green-${Math.random().toString(36).slice(2, 9)}`;
                         return f;
                       }),
+                  }}
+                  onLocationPick={handleLocationPick}
+                  onDrawCreate={handleFeatureCreate}
+                  onDrawUpdate={handleFeatureUpdate}
+                  onDrawDelete={handleFeatureDelete}
+                  onEnterEdit={() => {
+                    setMapMode('edit');
                   }}
                 />
               </div>
