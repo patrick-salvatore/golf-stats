@@ -51,8 +51,8 @@ export type TeeBox = {
   name: string;
   color: string;
   yardage: number;
-  lat?: number;
-  lng?: number;
+  lat: number;
+  lng: number;
 };
 
 export type HoleDefinition = BaseEntity & {
@@ -155,7 +155,7 @@ db.version(1).stores({
     '++id, roundId, holeNumber, [roundId+holeNumber], serverId, syncStatus',
 
   // Sync
-  syncQueue: '++id, entity, entityId, createdAt, operation',
+  syncQueue: '++id, entity, entityId, [entity+entityId], createdAt, operation',
 });
 
 export { db };

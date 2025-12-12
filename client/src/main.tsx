@@ -21,7 +21,7 @@ const AuthenticatedLayout = (props: { children?: JSX.Element }) => {
     <AppProvider>
       <Header />
       {props.children}
-      <SyncStatus />
+      {/* <SyncStatus /> */}
     </AppProvider>
   );
 };

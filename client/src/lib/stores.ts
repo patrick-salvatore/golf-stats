@@ -552,7 +552,6 @@ export const ClubStore = {
   },
 
   async createBag(bag: Record<string, string>): Promise<LocalClub[]> {
-    // bag: { driver: "Titleist", putter: "Scotty" ... }
     const tempClubs: Club[] = Object.entries(bag).map(([type, name], idx) => ({
       id: generateTempId() - idx,
       name,
@@ -643,7 +642,6 @@ export const CourseStore = {
     return c as LocalCourse;
   },
 
-  // search: online first (cache hole_definitions separately)
   async search(query: string): Promise<LocalCourse[]> {
     try {
       if (isOnline()) {
@@ -738,33 +736,6 @@ export const CourseStore = {
     }
   },
 
-  async createDraft(
-    course: Omit<LocalCourse, 'id' | 'serverId' | 'syncStatus'>,
-  ): Promise<LocalCourse> {
-    const newCourse: Course = {
-      ...course,
-      status: 'draft',
-      syncStatus: SyncStatus.PENDING,
-    };
-    const id = await db.courses.add(newCourse);
-
-    // if caller passed holeDefinitions inline, store them normalized
-    if (
-      (course as LocalCourse).holeDefinitions &&
-      (course as LocalCourse).holeDefinitions!.length > 0
-    ) {
-      const hd = (course as LocalCourse).holeDefinitions!.map((h) => ({
-        ...h,
-        courseId: id,
-        syncStatus: SyncStatus.PENDING,
-      })) as HoleDefinition[];
-      await db.hole_definitions.bulkAdd(hd);
-    }
-
-    return { ...newCourse, id } as LocalCourse;
-  },
-
-  // update a single hole definition (writes into hole_definitions table)
   async updateHole(
     courseId: number,
     holeNumber: number,
@@ -938,7 +909,6 @@ export const CourseStore = {
     return { ...(newCourse as LocalCourse), id } as LocalCourse;
   },
 
-  // fetch course by server id and upsert both course and hole_definitions
   async fetchById(serverId: number): Promise<LocalCourse | null> {
     try {
       const serverCourse: ServerCourse = await courseApi.getCourse(serverId);
@@ -1003,6 +973,14 @@ export const CourseStore = {
       console.error('Failed to fetch course by id:', err);
       return CourseStore.getByServerId(serverId);
     }
+  },
+
+  async localUpdateCourse(course: LocalCourse) {
+    const newCourse: Course = {
+      ...course,
+      syncStatus: SyncStatus.PENDING,
+    };
+    await db.courses.upsert(newCourse.id, newCourse);
   },
 };
 
@@ -1159,7 +1137,7 @@ export async function processSync(): Promise<void> {
   }
 }
 
-export const LocalData = {
+export default {
   rounds: RoundStore,
   holes: HoleStore,
   clubs: ClubStore,
@@ -1169,5 +1147,3 @@ export const LocalData = {
   getSyncQueueCount,
   isOnline,
 };
-
-export default LocalData;

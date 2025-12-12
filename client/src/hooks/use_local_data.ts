@@ -12,7 +12,9 @@ import { useQueryClient, useQuery, useMutation } from '@tanstack/solid-query';
 import { createSignal, onMount, onCleanup, createEffect } from 'solid-js';
 import { useNavigate, useLocation } from '@solidjs/router';
 import {
-  LocalData,
+  processSync,
+  getPendingSyncItems,
+  getSyncQueueCount,
   RoundStore,
   HoleStore,
   ClubStore,
@@ -268,15 +270,12 @@ export function useClubsQuery() {
         // But if data is null, we fallback to idbClubs.
         // If data is [], it means user has no clubs, so we validly have 0 clubs.
         const currentClubs = data ?? idbClubs;
-        
+
         // Only update if we have new data or if we are confirming the empty state
         setClubs(currentClubs);
 
         // Enforce club setup: if no clubs and not on onboarding, redirect
-        if (
-          currentClubs.length === 0 &&
-          location.pathname !== '/onboarding'
-        ) {
+        if (currentClubs.length === 0 && location.pathname !== '/onboarding') {
           navigate('/onboarding', { replace: true });
         }
       });
@@ -371,7 +370,7 @@ export function useCreateCourse() {
 export function useSyncQueueCount() {
   return useQuery(() => ({
     queryKey: queryKeys.sync.count,
-    queryFn: () => LocalData.getSyncQueueCount(),
+    queryFn: () => getSyncQueueCount(),
     refetchInterval: 10000, // Check every 10 seconds
   }));
 }
@@ -382,7 +381,7 @@ export function useSyncQueueCount() {
 export function useSyncQueue() {
   return useQuery(() => ({
     queryKey: queryKeys.sync.queue,
-    queryFn: () => LocalData.getPendingSyncItems(),
+    queryFn: () => getPendingSyncItems(),
   }));
 }
 
@@ -393,7 +392,7 @@ export function useProcessSync() {
   const queryClient = useQueryClient();
 
   return useMutation(() => ({
-    mutationFn: () => LocalData.processSync(),
+    mutationFn: () => processSync(),
     onSuccess: () => {
       // Invalidate all queries after sync
       queryClient.invalidateQueries({ queryKey: queryKeys.rounds.all });
@@ -459,6 +458,6 @@ export function useLocalData() {
     },
 
     // Trigger sync
-    sync: () => LocalData.processSync(),
+    sync: () => processSync(),
   };
 }
