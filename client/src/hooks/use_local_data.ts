@@ -10,6 +10,7 @@
 
 import { useQueryClient, useQuery, useMutation } from '@tanstack/solid-query';
 import { createSignal, onMount, onCleanup, createEffect } from 'solid-js';
+import { useNavigate, useLocation } from '@solidjs/router';
 import {
   LocalData,
   RoundStore,
@@ -20,7 +21,7 @@ import {
   type LocalHole,
   type LocalCourse,
   type LocalClub,
-} from '~/lib/local-data';
+} from '~/lib/stores';
 import { queryClient } from '~/lib/query';
 
 // ============ Query Keys ============
@@ -240,6 +241,8 @@ export function useSaveHoles() {
 
 export function useClubsQuery() {
   const [clubs, setClubs] = createSignal<LocalClub[]>([]);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   createEffect(async () => {
     const idbClubs = await ClubStore.getAll();
@@ -256,11 +259,26 @@ export function useClubsQuery() {
           if (navigator.onLine) {
             return ClubStore.fetchFromServer();
           }
+          return null;
         },
         staleTime: 1000 * 60 * 5, // 5 minutes
       })
       .then((data) => {
-        setClubs(data ?? []);
+        // If data is null (offline) or empty array (fresh user from server), use it.
+        // But if data is null, we fallback to idbClubs.
+        // If data is [], it means user has no clubs, so we validly have 0 clubs.
+        const currentClubs = data ?? idbClubs;
+        
+        // Only update if we have new data or if we are confirming the empty state
+        setClubs(currentClubs);
+
+        // Enforce club setup: if no clubs and not on onboarding, redirect
+        if (
+          currentClubs.length === 0 &&
+          location.pathname !== '/onboarding'
+        ) {
+          navigate('/onboarding', { replace: true });
+        }
       });
   });
 
@@ -275,6 +293,20 @@ export function useCreateBag() {
 
   return useMutation(() => ({
     mutationFn: (bag: Record<string, string>) => ClubStore.createBag(bag),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clubs.all });
+    },
+  }));
+}
+
+/**
+ * Update a bag (replace set of clubs)
+ */
+export function useUpdateBag() {
+  const queryClient = useQueryClient();
+
+  return useMutation(() => ({
+    mutationFn: (bag: Record<string, string>) => ClubStore.updateBag(bag),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.clubs.all });
     },

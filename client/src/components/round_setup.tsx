@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { Component, Accessor, Setter } from "solid-js";
-import { CourseStore, type LocalCourse } from "~/lib/local-data";
+import { CourseStore, type LocalCourse } from "~/lib/stores";
 
 // Use LocalCourse for the Course type
 type Course = LocalCourse;
@@ -107,8 +107,7 @@ export const RoundSetup: Component<RoundSetupProps> = (props) => {
       </button>
       
       <p class="text-center text-xs text-slate-500 mt-4">
-        Selecting a course enables GPS & Maps. <br/>
-        <a href="/courses/new" class="text-emerald-500 underline">Add a new course</a>
+        Selecting a course enables GPS & Maps.
       </p>
     </div>
   );

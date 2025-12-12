@@ -1,4 +1,4 @@
-import  {  Show } from 'solid-js';
+import { Show } from 'solid-js';
 import { ApproachInput } from '~/components/approach_input';
 import { ClubSelector } from '~/components/club_selector';
 import { FairwayInput } from '~/components/fairway_input';
@@ -7,20 +7,40 @@ import { PuttInput } from '~/components/putt_input';
 import { RecoveryInput } from '~/components/recovery_input';
 import { ScoreInput } from '~/components/score_input';
 
-export const HoleInputForm = (props) => {
-
+export const HoleInputForm = (props: any) => {
   return (
     <div class="flex-1 flex flex-col pb-8">
       {/* Header */}
       <div class="bg-slate-900/80 backdrop-blur-md p-4 sticky top-0 z-10 border-b border-white/5">
         <div class="max-w-md mx-auto flex justify-between items-center">
-          <div>
-            <h2 class="text-xs font-bold text-emerald-500 uppercase tracking-widest">
-              {props.tracker.step === 'edit' ? 'Editing ' : ''}Hole {props.round.currentHoleNum}
-            </h2>
-            <span class="text-white font-semibold truncate max-w-[200px] block">
-              {props.round.courseName}
-            </span>
+          <div class="flex items-center gap-3">
+            <button
+              onClick={props.onEndRound}
+              class="w-8 h-8 flex items-center justify-center rounded-full bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-colors"
+              title="End Round"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+            </button>
+            <div>
+              <h2 class="text-xs font-bold text-emerald-500 uppercase tracking-widest">
+                {props.tracker.step === 'edit' ? 'Editing ' : ''}Hole{' '}
+                {props.round.currentHoleNum}
+              </h2>
+              <span class="text-white font-semibold truncate max-w-[200px] block">
+                {props.round.courseName}
+              </span>
+            </div>
           </div>
           <div class="text-right">
             <span class="text-xs text-slate-400 block">Total</span>
@@ -109,7 +129,9 @@ export const HoleInputForm = (props) => {
               setStatus={(v) =>
                 props.setHoleInput(
                   'fairwayStatus',
-                  typeof v === 'function' ? v(props.holeInput.fairwayStatus) : v,
+                  typeof v === 'function'
+                    ? v(props.holeInput.fairwayStatus)
+                    : v,
                 )
               }
             />
@@ -144,7 +166,9 @@ export const HoleInputForm = (props) => {
             setGreensideBunker={(v) =>
               props.setHoleInput(
                 'greensideBunker',
-                typeof v === 'function' ? v(props.holeInput.greensideBunker) : v,
+                typeof v === 'function'
+                  ? v(props.holeInput.greensideBunker)
+                  : v,
               )
             }
           />

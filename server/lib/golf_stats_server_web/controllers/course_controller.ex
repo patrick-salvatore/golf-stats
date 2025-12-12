@@ -1,5 +1,6 @@
 defmodule GolfStatsServerWeb.CourseController do
   use GolfStatsServerWeb, :controller
+  require Logger
 
   alias GolfStatsServer.Courses
   alias GolfStatsServer.Courses.Course
@@ -11,17 +12,28 @@ defmodule GolfStatsServerWeb.CourseController do
     render(conn, :index, courses: courses)
   end
 
+  def index(conn, %{"filter" => "mine"}) do
+    user = conn.assigns.current_user
+    courses = Courses.list_user_courses(user)
+    render(conn, :index, courses: courses)
+  end
+
   def index(conn, _params) do
     courses = Courses.list_courses()
     render(conn, :index, courses: courses)
   end
 
   def create(conn, %{"course" => course_params}) do
+    user = conn.assigns.current_user
+    course_params = Map.put(course_params, "user_id", user.id)
+
+    Logger.info("Creating course with params: #{inspect(course_params)}")
+
     with {:ok, %Course{} = course} <- Courses.create_course(course_params) do
       conn
       |> put_status(:created)
       |> put_resp_header("location", ~p"/api/courses/#{course}")
-      |> render(:show, course: course)
+      |> render(:show_with_holes, course: course)
     end
   end
 

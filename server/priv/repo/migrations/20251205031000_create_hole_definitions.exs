@@ -5,7 +5,6 @@ defmodule GolfStatsServer.Repo.Migrations.CreateHoleDefinitions do
     create table(:hole_definitions) do
       add(:hole_number, :integer)
       add(:par, :integer)
-      add(:yardage, :integer)
       add(:handicap, :integer)
       add(:lat, :float)
       add(:lng, :float)

@@ -7,18 +7,13 @@ import {
   type JSX,
   Show,
 } from 'solid-js';
-import {
-  getUser,
-  setUser as saveUser,
-  clearUser,
-  type StoredUser,
-} from '~/lib/storage';
+import { UserStore , LocalUser} from '~/lib/stores';
 import * as userApi from '~/api/users';
 
 interface AuthContextValue {
-  user: Accessor<StoredUser | null>;
+  user: Accessor<LocalUser | null>;
   isLoading: Accessor<boolean>;
-  setUser: (user: StoredUser) => Promise<void>;
+  setUser: (user: LocalUser) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -30,38 +25,34 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider(props: AuthProviderProps) {
-  const [user, setUserSignal] = createSignal<StoredUser | null>(null);
+  const [user, setUserSignal] = createSignal<LocalUser | null>(null);
   const [isLoading, setIsLoading] = createSignal(true);
 
-  const setUser = async (newUser: StoredUser) => {
-    await saveUser(newUser);
+  const setUser = async (newUser: LocalUser) => {
+    await UserStore.saveUser(newUser);
     setUserSignal(newUser);
   };
 
   const logout = async () => {
-    await clearUser();
+    await UserStore.clearUser();
     setUserSignal(null);
   };
 
   // Load user on mount and verify with server
   createEffect(async () => {
     try {
-      const storedUser = await getUser();
+      const storedUser = await UserStore.getUser();
 
       if (storedUser) {
         try {
-          // Verify user exists on server
           const serverUser = await userApi.getMe();
-          // User verified, update with server data
           setUserSignal(serverUser);
         } catch (error: unknown) {
           const axiosError = error as { response?: { status?: number } };
           if (axiosError.response?.status === 401) {
-            // User no longer exists on server, clear local data
-            await clearUser();
+            await UserStore.clearUser();
             setUserSignal(null);
           } else {
-            // Network error or other issue - trust local user (offline mode)
             setUserSignal(storedUser);
           }
         }
@@ -96,13 +87,7 @@ export function AuthProvider(props: AuthProviderProps) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }
-
-/**
- * Get the current user synchronously (for use in API interceptors)
- * This reads directly from storage, not from context
- */
-export { getUser as getCurrentUser } from "~/lib/storage";

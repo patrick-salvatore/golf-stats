@@ -106,13 +106,28 @@ defmodule GolfStatsServer.Bag do
     Repo.transaction(fn ->
       bag
       |> Enum.map(fn {name, type} ->
-        {:ok, club} = create_club(user, %{"name" => name, "type" => type})
-        club
+        case create_club(user, %{"name" => name, "type" => type}) do
+          {:ok, club} -> club
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
       end)
     end)
-    |> case do
-      {:ok, clubs} -> clubs
-      {:error, reason} -> [{:error, reason}]
-    end
+  end
+
+  def replace_bag(user, bag) do
+    Repo.transaction(fn ->
+      # Delete existing clubs
+      from(c in Club, where: c.user_id == ^user.id)
+      |> Repo.delete_all()
+
+      # Create new clubs
+      bag
+      |> Enum.map(fn {name, type} ->
+        case create_club(user, %{"name" => name, "type" => type}) do
+          {:ok, club} -> club
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
+    end)
   end
 end

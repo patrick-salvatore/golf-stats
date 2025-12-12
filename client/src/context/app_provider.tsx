@@ -1,7 +1,7 @@
 import { createContext, useContext, type Accessor } from 'solid-js';
 import { createMemo, type JSX } from 'solid-js';
 import { useClubsQuery, useRoundsQuery } from '~/hooks/use_local_data';
-import { RoundStore, type LocalClub, type LocalRound } from '~/lib/local-data';
+import { RoundStore, type LocalClub, type LocalRound } from '~/lib/stores';
 
 export function AppProvider(props: { children: JSX.Element }) {
   const rounds = useRoundsQuery();
@@ -14,6 +14,8 @@ export function AppProvider(props: { children: JSX.Element }) {
       console.error(e);
     }
   };
+
+  const deleteRound = async () => {};
 
   // Past = synced rounds from server (already in camelCase from LocalRound)
   const pastRounds = createMemo(() => {
@@ -32,8 +34,23 @@ export function AppProvider(props: { children: JSX.Element }) {
       }));
   });
 
+  const activeRound = createMemo(() => {
+    const allRounds = rounds() ?? [];
+    // Find round that is not ended (no endedAt)
+    // Sort by date descending to get the most recent one
+    return allRounds
+      .filter((r) => !r.endedAt)
+      .sort((a, b) => {
+        const dateA = new Date(a.createdAt ?? 0).getTime();
+        const dateB = new Date(b.createdAt ?? 0).getTime();
+        return dateB - dateA;
+      })[0];
+  });
+
   return (
-    <RoundContext.Provider value={{ syncRound, rounds, pastRounds, clubs }}>
+    <RoundContext.Provider
+      value={{ syncRound, rounds, pastRounds, clubs, activeRound, deleteRound }}
+    >
       {props.children}
     </RoundContext.Provider>
   );
@@ -44,6 +61,8 @@ interface AppContextValue {
   pastRounds: Accessor<LocalRound[]>;
   rounds: Accessor<LocalRound[]>;
   clubs: Accessor<LocalClub[]>;
+  activeRound: Accessor<LocalRound>;
+  deleteRound: (roundId: number) => Promise<void>;
 }
 
 export const RoundContext = createContext<AppContextValue>();

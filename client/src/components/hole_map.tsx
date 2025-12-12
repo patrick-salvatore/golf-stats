@@ -40,7 +40,11 @@ export const HoleMap = (props: HoleMapProps) => {
   let map: maplibregl.Map | null = null;
   let userMarker: maplibregl.Marker | null = null;
   
-  const [centerDistance, setCenterDistance] = createSignal<number | null>(null);
+  const [distances, setDistances] = createSignal<{
+    front: number | null;
+    middle: number | null;
+    back: number | null;
+  }>({ front: null, middle: null, back: null });
 
   // Initialize Map
   createEffect(() => {
@@ -142,11 +146,31 @@ export const HoleMap = (props: HoleMapProps) => {
 
     // Update view bounds and distance
     if (userLat && userLng && holeDef?.lat && holeDef?.lng) {
-        // Distance to hole center
         const from = turf.point([userLng, userLat]);
-        const to = turf.point([holeDef.lng, holeDef.lat]);
-        const dist = turf.distance(from, to, { units: 'yards' });
-        setCenterDistance(Math.round(dist));
+        
+        // Middle Distance
+        const toMiddle = turf.point([holeDef.lng, holeDef.lat]);
+        const distMiddle = Math.round(turf.distance(from, toMiddle, { units: 'yards' }));
+
+        // Front Distance
+        let distFront = null;
+        // @ts-ignore
+        if (holeDef.front_lat && holeDef.front_lng) {
+            // @ts-ignore
+            const toFront = turf.point([holeDef.front_lng, holeDef.front_lat]);
+            distFront = Math.round(turf.distance(from, toFront, { units: 'yards' }));
+        }
+
+        // Back Distance
+        let distBack = null;
+        // @ts-ignore
+        if (holeDef.back_lat && holeDef.back_lng) {
+            // @ts-ignore
+            const toBack = turf.point([holeDef.back_lng, holeDef.back_lat]);
+            distBack = Math.round(turf.distance(from, toBack, { units: 'yards' }));
+        }
+
+        setDistances({ front: distFront, middle: distMiddle, back: distBack });
 
         // Fit bounds
         const bounds = new maplibregl.LngLatBounds()
@@ -174,12 +198,24 @@ export const HoleMap = (props: HoleMapProps) => {
       <div ref={mapContainer} class="absolute inset-0 z-0" />
       
       {/* HUD Overlay */}
-      <div class="absolute bottom-4 left-4 z-10 flex flex-col gap-2">
-         {centerDistance() && (
+      <div class="absolute bottom-4 left-4 z-10 flex flex-col gap-1">
+         {distances().back && (
+            <div class="bg-slate-900/90 backdrop-blur px-3 py-1 rounded-lg border border-blue-500/30 text-blue-400">
+              <span class="text-[10px] uppercase font-bold block">Back</span>
+              <span class="text-lg font-bold font-mono">{distances().back}</span>
+            </div>
+         )}
+         {distances().middle && (
             <div class="bg-slate-900/90 backdrop-blur px-4 py-2 rounded-lg border border-white/10 shadow-xl">
               <span class="text-xs text-slate-400 block uppercase font-bold">Center</span>
-              <span class="text-2xl font-bold text-white font-mono">{centerDistance()}</span>
+              <span class="text-2xl font-bold text-white font-mono">{distances().middle}</span>
               <span class="text-xs text-slate-400 ml-1 uppercase font-bold">yds</span>
+            </div>
+         )}
+         {distances().front && (
+            <div class="bg-slate-900/90 backdrop-blur px-3 py-1 rounded-lg border border-red-500/30 text-red-400">
+              <span class="text-[10px] uppercase font-bold block">Front</span>
+              <span class="text-lg font-bold font-mono">{distances().front}</span>
             </div>
          )}
       </div>

@@ -25,7 +25,10 @@ defmodule GolfStatsServerWeb.Router do
 
     resources("/clubs", ClubController, except: [:new, :edit])
     post("/bag", BagController, :create)
+    put("/bag", BagController, :update)
     get("/bag", BagController, :index)
+
+    resources("/hole_definitions", HoleDefinitionController, only: [:update])
 
     get("/stats", StatsController, :dashboard)
 

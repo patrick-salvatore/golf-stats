@@ -13,20 +13,29 @@ defmodule GolfStatsServerWeb.BagController do
 
   def create(conn, %{"bag" => bag_params}) do
     user = conn.assigns.current_user
-    results = Bag.create_bag(user, bag_params)
 
-    case Enum.find(results, fn r -> match?({:error, _}, r) end) do
-      nil ->
-        # all good
-        inserted_clubs =
-          Enum.map(results, fn {:ok, club} -> club end)
-
+    case Bag.create_bag(user, bag_params) do
+      {:ok, clubs} ->
         conn
         |> put_status(:created)
-        |> render(:index, clubs: inserted_clubs)
+        |> render(:index, clubs: clubs)
 
       {:error, changeset} ->
-        # at least one insert failed
+        conn
+        |> put_status(:unprocessable_entity)
+        |> put_view(GolfStatsServerWeb.ChangesetJSON)
+        |> render("error.json", changeset: changeset)
+    end
+  end
+
+  def update(conn, %{"bag" => bag_params}) do
+    user = conn.assigns.current_user
+
+    case Bag.replace_bag(user, bag_params) do
+      {:ok, clubs} ->
+        render(conn, :index, clubs: clubs)
+
+      {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)
         |> put_view(GolfStatsServerWeb.ChangesetJSON)

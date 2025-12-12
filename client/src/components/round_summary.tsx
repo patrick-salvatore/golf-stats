@@ -1,5 +1,5 @@
 import { type Component, For, Show } from "solid-js";
-import type { LocalClub } from "~/lib/local-data";
+import type { LocalClub } from "~/lib/stores";
 
 // Hole type for summary display
 interface Hole {

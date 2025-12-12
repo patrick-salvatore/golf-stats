@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getUser } from '../lib/storage';
+import { UserStore } from '../lib/stores';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -13,7 +13,7 @@ const api = axios.create({
 
 // Request interceptor to add auth header
 api.interceptors.request.use(async (config) => {
-  const user = await getUser();
+  const user = await UserStore.getUser();
   if (user) {
     config.headers['x-user'] = user.username;
   }

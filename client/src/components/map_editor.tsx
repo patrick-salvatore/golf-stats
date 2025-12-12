@@ -1,11 +1,10 @@
-import { createSignal, onMount, onCleanup } from "solid-js";
+import { createEffect, onMount, onCleanup, createSignal } from "solid-js";
 import maplibregl from "maplibre-gl";
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
-import osmtogeojson from "osmtogeojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
-// Using ESRI World Imagery for satellite view (free for non-commercial/dev use usually)
+// Using ESRI World Imagery for satellite view
 const SATELLITE_STYLE = {
   version: 8,
   sources: {
@@ -15,7 +14,7 @@ const SATELLITE_STYLE = {
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
       ],
       tileSize: 256,
-      attribution: "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+      attribution: "Tiles &copy; Esri"
     },
   },
   layers: [
@@ -30,47 +29,94 @@ const SATELLITE_STYLE = {
 
 interface MapEditorProps {
   initialGeoJSON?: any;
-  onSave?: (geoJSON: any) => void;
-  center?: [number, number]; // [lng, lat]
+  center?: [number, number];
+  zoom?: number;
+  mode?: 'view' | 'pick_location' | 'draw';
+  drawMode?: 'polygon' | 'point';
+  onLocationPick?: (lat: number, lng: number) => void;
+  onDrawCreate?: (feature: any) => void;
+  markers?: { lat: number; lng: number; label?: string; color?: string }[];
 }
 
 export default function MapEditor(props: MapEditorProps) {
   let mapContainer: HTMLDivElement | undefined;
-  let map: maplibregl.Map | null = null;
+  const [map, setMap] = createSignal<maplibregl.Map | null>(null);
   let draw: MapboxDraw | null = null;
-  const [loading, setLoading] = createSignal(false);
+  let markerInstances: maplibregl.Marker[] = [];
 
-  const [selectedFeatureId, setSelectedFeatureId] = createSignal<string | null>(null);
-  const [featureProperties, setFeatureProperties] = createSignal<any>({});
+  // Update map center/zoom when props change
+  createEffect(() => {
+    const m = map();
+    if (!m) return;
+    if (props.center) {
+      m.flyTo({ center: props.center, zoom: props.zoom || 18 });
+    }
+  });
+
+  // Update markers
+  createEffect(() => {
+    const m = map();
+    if (!m) return;
+    
+    // Clear existing
+    markerInstances.forEach(marker => marker.remove());
+    markerInstances = [];
+
+    if (props.markers) {
+      props.markers.forEach(markerData => {
+        if (markerData.lat && markerData.lng) {
+          const marker = new maplibregl.Marker({ color: markerData.color || '#10b981' })
+            .setLngLat([markerData.lng, markerData.lat])
+            .addTo(m);
+          markerInstances.push(marker);
+        }
+      });
+    }
+  });
+
+  // Handle Mode Changes
+  createEffect(() => {
+    const m = map();
+    if (!m || !draw) return;
+
+    if (props.mode === 'draw') {
+        if (props.drawMode === 'polygon') {
+            draw.changeMode('draw_polygon');
+        } else if (props.drawMode === 'point') {
+            draw.changeMode('draw_point');
+        }
+    } else {
+        // Stop drawing
+        draw.changeMode('simple_select');
+    }
+  });
 
   onMount(() => {
     if (!mapContainer) return;
     
-    map = new maplibregl.Map({
+    const m = new maplibregl.Map({
       container: mapContainer,
       style: SATELLITE_STYLE as any,
       center: props.center || [-97.7431, 30.2672],
-      zoom: 16,
+      zoom: props.zoom || 16,
     });
 
     draw = new MapboxDraw({
       displayControlsDefault: false,
       controls: {
-        polygon: true,
-        line_string: true,
+        polygon: false,
         trash: true,
       },
-      defaultMode: 'draw_polygon',
       styles: [
-        // Style for the polygon fill
+        // Polygon Fill
         {
           id: 'gl-draw-polygon-fill-inactive',
           type: 'fill',
           filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
           paint: {
-            'fill-color': '#3bb2d0',
-            'fill-outline-color': '#3bb2d0',
-            'fill-opacity': 0.1
+            'fill-color': '#10b981',
+            'fill-outline-color': '#10b981',
+            'fill-opacity': 0.2
           }
         },
         {
@@ -80,10 +126,10 @@ export default function MapEditor(props: MapEditorProps) {
           paint: {
             'fill-color': '#fbb03b',
             'fill-outline-color': '#fbb03b',
-            'fill-opacity': 0.1
+            'fill-opacity': 0.2
           }
         },
-        // Style for the polygon stroke
+        // Polygon Stroke
         {
           id: 'gl-draw-polygon-stroke-inactive',
           type: 'line',
@@ -93,7 +139,7 @@ export default function MapEditor(props: MapEditorProps) {
             'line-join': 'round'
           },
           paint: {
-            'line-color': '#3bb2d0',
+            'line-color': '#10b981',
             'line-width': 2
           }
         },
@@ -107,192 +153,69 @@ export default function MapEditor(props: MapEditorProps) {
           },
           paint: {
             'line-color': '#fbb03b',
-            'line-dasharray': [0.2, 2],
+            'line-dasharray': [2, 2],
             'line-width': 2
           }
         },
-        // LineString styles
+        // Points
         {
-          id: 'gl-draw-line-inactive',
-          type: 'line',
-          filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'LineString'], ['!=', 'mode', 'static']],
-          layout: {
-            'line-cap': 'round',
-            'line-join': 'round'
-          },
-          paint: {
-            'line-color': '#3bb2d0',
-            'line-width': 2
-          }
-        },
-        {
-          id: 'gl-draw-line-active',
-          type: 'line',
-          filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'LineString']],
-          layout: {
-            'line-cap': 'round',
-            'line-join': 'round'
-          },
-          paint: {
-            'line-color': '#fbb03b',
-            'line-dasharray': [0.2, 2],
-            'line-width': 2
-          }
-        },
-        // Vertex points
-        {
-          id: 'gl-draw-polygon-and-line-vertex-stroke-inactive',
+          id: 'gl-draw-point-inactive',
           type: 'circle',
-          filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
+          filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
           paint: {
             'circle-radius': 5,
-            'circle-color': '#fff'
+            'circle-color': '#10b981'
           }
         },
         {
-          id: 'gl-draw-polygon-and-line-vertex-inactive',
+          id: 'gl-draw-point-active',
           type: 'circle',
-          filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
+          filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'Point']],
           paint: {
-            'circle-radius': 3,
+            'circle-radius': 7,
             'circle-color': '#fbb03b'
           }
         },
       ]
     });
 
-    map.addControl(draw as any, 'top-left');
-    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    m.addControl(draw as any);
+    m.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-    map.on('load', () => {
+    m.on('load', () => {
       if (props.initialGeoJSON && draw) {
         draw.add(props.initialGeoJSON);
       }
+      setMap(m); // Trigger effects
     });
 
-    const onSelect = (e: any) => {
-      if (e.features.length > 0) {
-        const feature = e.features[0];
-        setSelectedFeatureId(feature.id);
-        setFeatureProperties(feature.properties || {});
-      } else {
-        setSelectedFeatureId(null);
-        setFeatureProperties({});
-      }
-    };
+    m.on('click', (e) => {
+        if (props.mode === 'pick_location' && props.onLocationPick) {
+            props.onLocationPick(e.lngLat.lat, e.lngLat.lng);
+        }
+    });
 
-    map.on('draw.create', updateData);
-    map.on('draw.delete', updateData);
-    map.on('draw.update', updateData);
-    map.on('draw.selectionchange', onSelect);
+    m.on('draw.create', (e) => {
+        if (props.onDrawCreate && e.features[0]) {
+            props.onDrawCreate(e.features[0]);
+            // If we only want single feature creation, we could reset mode here
+        }
+    });
   });
 
-  const updateFeatureProperty = (key: string, value: any) => {
-    if (!draw || !selectedFeatureId()) return;
-    const id = selectedFeatureId()!;
-    const feature = draw.get(id);
-    if (feature) {
-      if (!feature.properties) feature.properties = {};
-      feature.properties[key] = value;
-      draw.add(feature); 
-      setFeatureProperties({ ...feature.properties });
-      updateData();
-    }
-  };
-
-  const updateData = () => {
-    if (draw && props.onSave) {
-      props.onSave(draw.getAll());
-    }
-  };
-
-  const importFromOSM = async () => {
-    if (!map) return;
-    setLoading(true);
-    const bounds = map.getBounds();
-    // Overpass API query for golf features
-    const query = `
-      [out:json];
-      (
-        way["golf"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
-        relation["golf"](${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
-      );
-      out geom;
-    `;
-
-    try {
-      const response = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        body: query,
-      });
-      const data = await response.json();
-      const geojson = osmtogeojson(data);
-      
-      if (draw) {
-        geojson.features.forEach((feature: any) => {
-           if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
-             draw?.add(feature);
-           }
-        });
-        updateData();
-      }
-      
-    } catch (error) {
-      console.error("Error fetching OSM data:", error);
-      alert("Failed to fetch OSM data");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   onCleanup(() => {
-    if (map) map.remove();
+    const m = map();
+    if (m) m.remove();
   });
 
   return (
-    <div class="relative w-full h-full min-h-[400px] rounded-xl overflow-hidden shadow-2xl border border-slate-700">
-      <div ref={mapContainer} class="w-full h-full bg-slate-900" />
+    <div class="relative w-full h-full rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-900">
+      <div ref={mapContainer} class="w-full h-full" />
       
-      <div class="absolute top-4 left-14 z-10 bg-slate-800 p-2 rounded shadow-lg flex flex-col gap-2">
-         <button 
-           onClick={importFromOSM}
-           disabled={loading()}
-           class="bg-emerald-600 hover:bg-emerald-500 text-xs text-white p-2 rounded"
-         >
-           {loading() ? "Importing..." : "Import OSM Data"}
-         </button>
-      </div>
-
-      {selectedFeatureId() && (
-        <div class="absolute bottom-4 right-4 z-20 bg-slate-800 p-4 rounded shadow-lg w-64 border border-slate-600">
-          <h3 class="text-white font-bold mb-2">Feature Properties</h3>
-          <div class="space-y-2">
-            <div>
-              <label class="block text-xs text-slate-400">Hole Number</label>
-              <input 
-                type="number" 
-                class="w-full bg-slate-900 text-white p-1 rounded border border-slate-700"
-                value={featureProperties().hole || ''}
-                onInput={(e) => updateFeatureProperty('hole', parseInt(e.currentTarget.value))}
-              />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400">Type</label>
-              <select 
-                class="w-full bg-slate-900 text-white p-1 rounded border border-slate-700"
-                value={featureProperties().type || 'fairway'}
-                onChange={(e) => updateFeatureProperty('type', e.currentTarget.value)}
-              >
-                <option value="fairway">Fairway</option>
-                <option value="green">Green</option>
-                <option value="tee">Tee</option>
-                <option value="bunker">Bunker</option>
-                <option value="water">Water</option>
-                <option value="slope">Slope Arrow</option>
-              </select>
-            </div>
+      {props.mode === 'pick_location' && (
+          <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg border border-emerald-500/50 animate-pulse z-10">
+              Click map to set location
           </div>
-        </div>
       )}
     </div>
   );

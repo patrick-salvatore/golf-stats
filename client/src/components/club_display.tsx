@@ -1,5 +1,5 @@
 import { type Component, For, Show, type JSX } from "solid-js";
-import type { LocalClub } from "~/lib/local-data";
+import type { LocalClub } from "~/lib/stores";
 import {
   DriverIcon,
   WoodIcon,

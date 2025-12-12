@@ -10,6 +10,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@googlemaps/js-api-loader": "^2.0.2",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@solidjs/router": "^0.15.4",
     "@tanstack/query-persist-client-core": "^5.91.11",

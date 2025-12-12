@@ -2,24 +2,36 @@ defmodule GolfStatsServer.Courses do
   @moduledoc """
   The Courses context.
   """
-
   import Ecto.Query, warn: false
   alias GolfStatsServer.Repo
 
   alias GolfStatsServer.Courses.Course
 
+  alias GolfStatsServer.Courses.HoleDefinition
+
   @doc """
   Returns the list of courses.
   """
   def list_courses do
-    Repo.all(Course)
+    from(c in Course, where: c.status == "published")
+    |> Repo.all()
+  end
+
+  def list_user_drafts(user) do
+    from(c in Course, where: c.user_id == ^user.id and c.status == "draft")
+    |> Repo.all()
+  end
+
+  def list_user_courses(user) do
+    from(c in Course, where: c.user_id == ^user.id)
+    |> Repo.all()
   end
 
   def search_courses(query) do
     search = "%#{String.downcase(query)}%"
 
     from(c in Course,
-      where: like(fragment("lower(?)", c.name), ^search),
+      where: like(fragment("lower(?)", c.name), ^search) and c.status == "published",
       order_by: c.name
     )
     |> Repo.all()
@@ -33,7 +45,9 @@ defmodule GolfStatsServer.Courses do
   def get_course_with_holes!(id) do
     Course
     |> Repo.get!(id)
-    |> Repo.preload(hole_definitions: [order_by: :hole_number])
+    |> Repo.preload(
+      hole_definitions: {from(h in HoleDefinition, order_by: h.hole_number), [:tee_boxes]}
+    )
   end
 
   @doc """
@@ -99,5 +113,19 @@ defmodule GolfStatsServer.Courses do
   """
   def change_course(%Course{} = course, attrs \\ %{}) do
     Course.changeset(course, attrs)
+  end
+
+  alias GolfStatsServer.Courses.HoleDefinition
+
+  def get_hole_definition!(id) do
+    HoleDefinition
+    |> Repo.get!(id)
+    |> Repo.preload(:tee_boxes)
+  end
+
+  def update_hole_definition(%HoleDefinition{} = hole, attrs) do
+    hole
+    |> HoleDefinition.changeset(attrs)
+    |> Repo.update()
   end
 end

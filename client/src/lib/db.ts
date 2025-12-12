@@ -1,120 +1,161 @@
 import Dexie, { type EntityTable } from 'dexie';
 
-// Sync status enum for local-first data
 export const SyncStatus = {
-  PENDING: 0, // Not yet synced to server
-  SYNCED: 1, // Synced with server
-  MODIFIED: 2, // Modified locally after sync
-  DELETED: 3, // Marked for deletion
+  PENDING: 0,
+  SYNCED: 1,
+  MODIFIED: 2,
+  DELETED: 3,
 } as const;
-
 export type SyncStatusType = (typeof SyncStatus)[keyof typeof SyncStatus];
 
-// Sync queue for tracking pending operations
-interface SyncQueueItem {
-  id?: number;
-  entity: 'round' | 'hole' | 'club' | 'course';
-  entityId: number;
-  operation: 'create' | 'update' | 'delete';
-  payload: unknown;
-  createdAt: string;
-  attempts: number;
-  lastError?: string;
-}
-
-interface Round {
-  id?: number;
+/* ─────────────────────────────────────────────
+   Base Entity
+────────────────────────────────────────────── */
+type BaseEntity = {
+  id?: number; // Local Dexie ID
   serverId?: number; // Server-assigned ID after sync
-  courseId?: number; // Link to Course entity
-  courseName: string;
-  date: string; // Date of play
-  totalScore: number;
   syncStatus: SyncStatusType;
+};
+
+/* ─────────────────────────────────────────────
+   Domain Types
+────────────────────────────────────────────── */
+export type User = BaseEntity & {
+  username: string;
+};
+
+export type Club = BaseEntity & {
+  name: string;
+  type: string;
+};
+
+export type ClubDefinition = {
+  id?: number;
+  name: string;
+  type: string;
+  category: string;
+  default_selected: boolean;
+};
+
+export type Course = BaseEntity & {
+  name: string;
+  city: string;
+  state: string;
+  lat: number;
+  lng: number;
+  status: 'draft' | 'published';
+};
+
+export type TeeBox = {
+  id?: number;
+  name: string;
+  color: string;
+  yardage: number;
+  lat?: number;
+  lng?: number;
+};
+
+export type HoleDefinition = BaseEntity & {
+  courseId: number;
+  holeNumber: number;
+  par: number;
+  handicap: number;
+
+  // Geo fields
+  lat: number;
+  lng: number;
+  front_lat: number;
+  front_lng: number;
+  back_lat: number;
+  back_lng: number;
+
+  hazards: any;
+  geo_features: any;
+
+  tee_boxes?: TeeBox[];
+};
+
+export type Round = BaseEntity & {
+  courseId: number;
+  date: string;
+  totalScore: number;
+  courseName: string;
   createdAt?: string;
   endedAt?: string;
-}
+};
 
-export type FairwayStatus = 'hit' | 'left' | 'right';
 export type GIRStatus = 'hit' | 'long' | 'short' | 'left' | 'right';
+export type FairwayStatus = 'hit' | 'left' | 'right';
 
-interface Hole {
-  id?: number;
+export type Hole = BaseEntity & {
   roundId: number;
   holeNumber: number;
   par: number;
   score: number;
   putts: number;
-
-  // Detailed stats
   fairwayStatus?: FairwayStatus;
   girStatus?: GIRStatus;
   fairwayBunker: boolean;
   greensideBunker: boolean;
   proximityToHole?: number;
 
-  // Club Tracking
-  clubIds?: number[]; // Sequence of club IDs used
+  clubIds?: number[];
+};
 
-  // Keep legacy for safety/compatibility if needed, but optional
-  fairwayHit?: boolean;
-  gir?: boolean;
-}
-
-interface Club {
+export type SyncQueueItem = {
   id?: number;
-  serverId?: number;
-  name: string;
-  type: string;
-  syncStatus: SyncStatusType;
-}
+  entity: 'round' | 'hole' | 'club' | 'course' | 'holeDefinition';
+  entityId: number;
+  operation: 'create' | 'update' | 'delete';
+  payload: unknown;
+  createdAt: string;
+  attempts: number;
+  lastError?: string;
+};
 
-interface Course {
-  id?: number;
-  serverId?: number;
-  name: string;
-  city: string;
-  state: string;
-  lat: number;
-  lng: number;
-  holeDefinitions: HoleDefinition[];
-  syncStatus: SyncStatusType;
-}
-
-interface HoleDefinition {
-  id?: number;
-  courseId: number;
-  holeNumber: number;
-  par: number;
-  yardage: number;
-  handicap: number;
-  lat?: number;
-  lng?: number;
-  hazards?: any; // JSON object for bunkers, water, etc.
-  geo_features?: any; // GeoJSON FeatureCollection
-}
-
-interface User {
-  id?: number;
-  username: string;
-}
+/* ─────────────────────────────────────────────
+   Dexie Instance
+────────────────────────────────────────────── */
 
 const db = new Dexie('GolfStatsDB') as Dexie & {
+  users: EntityTable<User, 'id'>;
+  clubs: EntityTable<Club, 'id'>;
+  club_definitions: EntityTable<ClubDefinition, 'id'>;
+
+  courses: EntityTable<Course, 'id'>;
+  hole_definitions: EntityTable<HoleDefinition, 'id'>;
+
   rounds: EntityTable<Round, 'id'>;
   holes: EntityTable<Hole, 'id'>;
-  clubs: EntityTable<Club, 'id'>;
-  courses: EntityTable<Course, 'id'>;
-  users: EntityTable<User, 'id'>;
+
   syncQueue: EntityTable<SyncQueueItem, 'id'>;
 };
 
+/* ─────────────────────────────────────────────
+   Dexie Schema Definition
+────────────────────────────────────────────── */
+
 db.version(1).stores({
-  users: '++id, username',
-  rounds: '++id, serverId, date, syncStatus',
-  holes: '++id, roundId, holeNumber, [roundId+holeNumber]',
-  clubs: '++id, serverId, syncStatus',
-  courses: '++id, serverId, name, syncStatus',
-  syncQueue: '++id, entity, entityId, operation, createdAt',
+  // Auth
+  users: '++id, username, serverId, syncStatus',
+
+  // Clubs
+  clubs: '++id, serverId, name, type, syncStatus',
+  club_definitions: '++id, name, type, category, default_selected',
+
+  // Courses
+  courses: '++id, serverId, name, status, syncStatus',
+
+  // Hole Definitions (normalized)
+  hole_definitions: '++id, courseId, holeNumber, serverId, syncStatus',
+
+  // Rounds + Holes
+  rounds: '++id, courseId, serverId, date, syncStatus',
+  holes:
+    '++id, roundId, holeNumber, [roundId+holeNumber], serverId, syncStatus',
+
+  // Sync
+  syncQueue: '++id, entity, entityId, createdAt, operation',
 });
 
-export type { Round, Hole, Club, Course, HoleDefinition, User, SyncQueueItem };
 export { db };

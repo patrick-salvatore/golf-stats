@@ -1,8 +1,8 @@
 import { Show, onMount } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import { useNavigate, useParams, useSearchParams } from '@solidjs/router';
-import { useRounds } from '~/context/app_provider';
-import { useClubs } from '~/hooks/use_local_data';
+import { useAppContext } from '~/context/app_provider';
+
 import {
   RoundStore,
   HoleStore,
@@ -11,20 +11,24 @@ import {
   type LocalClub,
   type LocalCourse,
   type LocalRound,
-} from '~/lib/local-data';
+} from '~/lib/stores';
 import { SyncStatus } from '~/lib/db';
 import type {
   FairwayStatus,
   GIRStatus,
   HoleDefinition as StoredHoleDefinition,
 } from '~/lib/db';
+
 import { RoundSetup } from '~/components/round_setup';
 import { RoundSummary } from '~/components/round_summary';
 import { HoleDetailView } from '~/components/hole_detail_view';
 import { HoleInputForm } from './hole_input_form';
 
-// Hole type for internal use
-interface Hole {
+/* -------------------------
+   Local UI types (internal)
+   ------------------------- */
+
+interface HoleUI {
   id?: number;
   roundId: number;
   holeNumber: number;
@@ -39,13 +43,9 @@ interface Hole {
   clubIds?: number[];
 }
 
-// URL query param modes
 type ViewMode = 'playing' | 'view' | 'edit';
-
-// Internal step for UI rendering
 type TrackerStep = 'setup' | 'playing' | 'summary' | 'viewing' | 'edit';
 
-// Store types
 interface TrackerState {
   step: TrackerStep;
   loading: boolean;
@@ -61,7 +61,7 @@ interface RoundState {
   data: LocalRound | null;
   courseName: string;
   holeDefinitions: StoredHoleDefinition[];
-  holes: Hole[];
+  holes: HoleUI[];
   currentHoleNum: number;
 }
 
@@ -89,6 +89,10 @@ const defaultHoleInput: HoleInputState = {
   selectedClubs: [],
 };
 
+/* -------------------------
+   Component
+   ------------------------- */
+
 export default function RoundTracker() {
   const navigate = useNavigate();
   const params = useParams<{ id?: string }>();
@@ -96,10 +100,8 @@ export default function RoundTracker() {
     mode?: ViewMode;
     hole?: string;
   }>();
-  const { syncRound, deleteRound } = useRounds();
-  const clubsQuery = useClubs();
+  const { syncRound, clubs, deleteRound } = useAppContext();
 
-  // Stores
   const [tracker, setTracker] = createStore<TrackerState>({
     step: 'setup',
     loading: true,
@@ -124,7 +126,7 @@ export default function RoundTracker() {
 
   const resetHoleInput = (holeNum: number) => {
     const def = round.holeDefinitions.find((h) => h.holeNumber === holeNum);
-    const parValue = def?.par || 4;
+    const parValue = def?.par ?? 4;
 
     setHoleInput({
       par: parValue,
@@ -148,9 +150,9 @@ export default function RoundTracker() {
       return;
     }
 
-    const clubs = hole.clubIds?.length
+    const filteredClubs = hole.clubIds?.length
       ? hole.clubIds
-          .map((id) => (clubsQuery.data ?? []).find((c) => c.id === id))
+          .map((id) => (clubs() ?? []).find((c) => c.id === id))
           .filter((c): c is LocalClub => c !== undefined)
       : [];
 
@@ -158,17 +160,66 @@ export default function RoundTracker() {
       par: hole.par,
       score: hole.score,
       putts: hole.putts,
-      fairwayStatus: hole.fairwayStatus || null,
-      girStatus: hole.girStatus || null,
-      proximity: hole.proximityToHole || 20,
+      fairwayStatus: hole.fairwayStatus ?? null,
+      girStatus: hole.girStatus ?? null,
+      proximity: hole.proximityToHole ?? 20,
       fairwayBunker: hole.fairwayBunker,
       greensideBunker: hole.greensideBunker,
-      selectedClubs: clubs,
+      selectedClubs: filteredClubs,
     });
 
     setTracker('inputViewMode', 'score');
   };
 
+  function buildHoleDataObj(holeNum: number): Omit<LocalHole, 'id'> {
+    // LocalHole extends Hole; create Omit<LocalHole,'id'>
+    const hole: Omit<LocalHole, 'id'> = {
+      roundId: round.id as number, // caller ensures round.id exists
+      holeNumber: holeNum,
+      par: holeInput.par,
+      score: holeInput.score,
+      putts: holeInput.putts,
+      fairwayStatus: holeInput.fairwayStatus ?? undefined,
+      girStatus: holeInput.girStatus ?? undefined,
+      fairwayBunker: holeInput.fairwayBunker,
+      greensideBunker: holeInput.greensideBunker,
+      proximityToHole:
+        holeInput.girStatus === 'hit' ? holeInput.proximity : undefined,
+      clubIds: holeInput.selectedClubs
+        .map((c) => c.id)
+        .filter((id): id is number => id !== undefined),
+      // syncStatus will be filled by store if needed; not required for input
+    } as Omit<LocalHole, 'id'>;
+
+    return hole;
+  }
+
+  const refreshHolesFromDb = async (roundId: number) => {
+    const dbHoles = await HoleStore.getForRound(roundId);
+    // map DB holes (LocalHole) to UI HoleUI
+    const holesUI: HoleUI[] = dbHoles.map((h) => ({
+      id: h.id,
+      roundId: h.roundId,
+      holeNumber: h.holeNumber,
+      par: h.par,
+      score: h.score,
+      putts: h.putts,
+      fairwayStatus: h.fairwayStatus,
+      girStatus: h.girStatus,
+      fairwayBunker: h.fairwayBunker,
+      greensideBunker: h.greensideBunker,
+      proximityToHole: h.proximityToHole,
+      clubIds: h.clubIds ?? [],
+    }));
+    // ensure sorted
+    holesUI.sort((a, b) => a.holeNumber - b.holeNumber);
+
+    setRound('holes', holesUI);
+  };
+
+  /* -------------------------
+     Start a new round
+     ------------------------- */
   const startRound = async (course?: LocalCourse) => {
     const name = course?.name || round.courseName;
     if (!name) return;
@@ -177,35 +228,48 @@ export default function RoundTracker() {
       const now = new Date().toISOString();
       const date = now.split('T')[0];
 
+      // courseId should use serverId if available, else local id
       let courseId = course?.serverId ?? course?.id;
       let holeDefs: StoredHoleDefinition[] = [];
 
       if (courseId) {
         try {
+          // fetch normalized course (CourseStore.fetchById accepts serverId)
           const full = await CourseStore.fetchById(courseId);
           if (full) {
+            // prefer serverId for canonical linkage; keep hole definitions
             courseId = full.serverId ?? full.id;
-            holeDefs = full.holeDefinitions || [];
+            holeDefs = full.holeDefinitions ?? [];
           }
         } catch (e) {
           console.error('Failed to fetch full course details', e);
         }
       }
 
-      const newRound = await RoundStore.create({
-        courseName: name,
-        courseId,
+      // create the minimal LocalRound payload; LocalRound requires holes & courseName
+      const payload: Omit<LocalRound, 'id' | 'syncStatus'> = {
+        // from Round (BaseEntity) + LocalRound additions
+        courseId: courseId ?? 0,
         date,
         totalScore: 0,
+        courseName: name,
         createdAt: now,
-      });
+        endedAt: undefined,
+        holes: [], // start empty
+        // Note: syncStatus omitted per function signature
+      } as Omit<LocalRound, 'id' | 'syncStatus'>;
+
+      const newRound = await RoundStore.create(payload);
+
+      // ensure we set round state to the created local round
+      await refreshHolesFromDb(newRound.id!);
 
       setRound({
         id: newRound.id!,
         data: newRound,
         courseName: name,
         holeDefinitions: holeDefs,
-        holes: [],
+        holes: [], // we've just refreshed DB; may be empty
         currentHoleNum: 1,
       });
 
@@ -217,67 +281,35 @@ export default function RoundTracker() {
     }
   };
 
-  const addClubToHole = (club: LocalClub) => {
-    setHoleInput(
-      produce((s) => {
-        const selected = new Set(s.selectedClubs.map((c) => c.id));
-        if (selected.has(club.id)) {
-          s.selectedClubs = s.selectedClubs.filter((s) => s.id !== club.id);
-        } else {
-          s.selectedClubs = [...s.selectedClubs, club];
-        }
-      }),
-    );
-  };
-
-  const buildHoleData = (holeNum: number): Omit<LocalHole, 'id'> => ({
-    roundId: round.id!,
-    holeNumber: holeNum,
-    par: holeInput.par,
-    score: holeInput.score,
-    putts: holeInput.putts,
-    fairwayStatus: holeInput.fairwayStatus || undefined,
-    girStatus: holeInput.girStatus || undefined,
-    fairwayBunker: holeInput.fairwayBunker,
-    greensideBunker: holeInput.greensideBunker,
-    proximityToHole:
-      holeInput.girStatus === 'hit' ? holeInput.proximity : undefined,
-    clubIds: holeInput.selectedClubs
-      .map((c) => c.id)
-      .filter((id): id is number => id !== undefined),
-  });
-
+  /* -------------------------
+     Save current hole (playing flow)
+     ------------------------- */
   const saveHole = async () => {
     if (!round.id) return;
 
-    const holeData = buildHoleData(round.currentHoleNum);
+    const holeNum = round.currentHoleNum;
+    const holePayload = buildHoleDataObj(holeNum);
 
     try {
-      await HoleStore.addOrUpdate(round.id, holeData);
+      // Save via HoleStore (guarantees proper typing & DB consistency)
+      const saved = await HoleStore.addOrUpdate(round.id, holePayload);
 
-      // Update holes list
-      setRound(
-        produce((s) => {
-          const idx = s.holes.findIndex(
-            (h) => h.holeNumber === s.currentHoleNum,
-          );
-          if (idx >= 0) {
-            s.holes[idx] = holeData as Hole;
-          } else {
-            s.holes = [...s.holes, holeData as Hole];
-          }
-          s.holes = s.holes.sort((a, b) => a.holeNumber - b.holeNumber);
-        }),
-      );
+      // refresh holes from DB to ensure authoritative shape & serverIds etc.
+      await refreshHolesFromDb(round.id);
 
-      const totalScore = round.holes.reduce((acc, h) => acc + h.score, 0);
+      // recalculate totalScore from DB holes
+      const dbHoles = round.holes; // updated by refreshHolesFromDb via setRound
+      const totalScore = dbHoles.reduce((acc, h) => acc + (h.score ?? 0), 0);
+
+      // update round total on DB and local state
       await RoundStore.update(round.id, { totalScore });
 
-      if (round.currentHoleNum === 18) {
+      // advance or finish
+      if (holeNum >= 18) {
         setSearchParams({ mode: undefined, hole: undefined });
         setTracker('step', 'summary');
       } else {
-        const nextHole = round.currentHoleNum + 1;
+        const nextHole = holeNum + 1;
         setRound('currentHoleNum', nextHole);
         resetHoleInput(nextHole);
       }
@@ -286,29 +318,25 @@ export default function RoundTracker() {
     }
   };
 
+  /* -------------------------
+     Save an edited hole (edit flow)
+     ------------------------- */
   const saveEditedHole = async () => {
     if (!round.id || !tracker.editingHoleNum) return;
 
-    const holeData = buildHoleData(tracker.editingHoleNum);
+    const holeNum = tracker.editingHoleNum;
+    const holePayload = buildHoleDataObj(holeNum);
 
     try {
-      await HoleStore.addOrUpdate(round.id, holeData);
+      await HoleStore.addOrUpdate(round.id, holePayload);
 
-      setRound(
-        produce((s) => {
-          const idx = s.holes.findIndex(
-            (h) => h.holeNumber === tracker.editingHoleNum,
-          );
-          if (idx >= 0) {
-            s.holes[idx] = holeData as Hole;
-          } else {
-            s.holes = [...s.holes, holeData as Hole];
-          }
-          s.holes = s.holes.sort((a, b) => a.holeNumber - b.holeNumber);
-        }),
+      // refresh authoritative holes
+      await refreshHolesFromDb(round.id);
+
+      const totalScore = round.holes.reduce(
+        (acc, h) => acc + (h.score ?? 0),
+        0,
       );
-
-      const totalScore = round.holes.reduce((acc, h) => acc + h.score, 0);
       await RoundStore.update(round.id, { totalScore });
 
       setTracker({ editingHoleNum: null, step: 'summary' });
@@ -318,53 +346,79 @@ export default function RoundTracker() {
     }
   };
 
+  /* -------------------------
+     Prev hole (undo last recorded hole)
+     ------------------------- */
   const prevHole = async () => {
-    if (round.currentHoleNum <= 1 || !round.id) return;
+    if (!round.id || round.currentHoleNum <= 1) return;
 
-    const previousHole = round.holes[round.holes.length - 1];
-    if (!previousHole) return;
+    // If there are no holes, nothing to undo
+    if (round.holes.length === 0) return;
 
-    const clubs = previousHole.clubIds?.length
-      ? previousHole.clubIds
-          .map((id) => (clubsQuery.data ?? []).find((c) => c.id === id))
-          .filter((c): c is LocalClub => c !== undefined)
-      : [];
-
-    setHoleInput({
-      par: previousHole.par,
-      score: previousHole.score,
-      putts: previousHole.putts,
-      fairwayStatus: previousHole.fairwayStatus || null,
-      girStatus: previousHole.girStatus || null,
-      proximity: previousHole.proximityToHole || 20,
-      fairwayBunker: previousHole.fairwayBunker,
-      greensideBunker: previousHole.greensideBunker,
-      selectedClubs: clubs,
-    });
-
+    // remove last hole locally (UI)
     const updatedHoles = round.holes.slice(0, -1);
-    await HoleStore.saveAll(round.id, updatedHoles as LocalHole[]);
 
-    const newTotal = updatedHoles.reduce((acc, h) => acc + h.score, 0);
-    await RoundStore.update(round.id, { totalScore: newTotal });
+    // convert UI holes back into LocalHole shape for saveAll
+    const payloadHoles: Omit<LocalHole, 'id'>[] = updatedHoles.map((h) => ({
+      // roundId required and known
+      roundId: round.id as number,
+      holeNumber: h.holeNumber,
+      par: h.par,
+      score: h.score,
+      putts: h.putts,
+      fairwayStatus: h.fairwayStatus,
+      girStatus: h.girStatus,
+      fairwayBunker: h.fairwayBunker,
+      greensideBunker: h.greensideBunker,
+      proximityToHole: h.proximityToHole,
+      clubIds: h.clubIds,
+    }));
 
-    setRound(
-      produce((s) => {
-        s.holes = updatedHoles;
-        s.currentHoleNum = s.currentHoleNum - 1;
-      }),
-    );
+    try {
+      await HoleStore.saveAll(round.id, payloadHoles);
+
+      const newTotal = payloadHoles.reduce((acc, h) => acc + (h.score ?? 0), 0);
+      await RoundStore.update(round.id, { totalScore: newTotal });
+
+      setRound(
+        produce((s) => {
+          s.holes = updatedHoles;
+          s.currentHoleNum = Math.max(1, s.currentHoleNum - 1);
+        }),
+      );
+    } catch (e) {
+      console.error('Failed to revert last hole', e);
+    }
   };
 
+  /* -------------------------
+     Finish round
+     ------------------------- */
   const finishRound = async () => {
     if (!round.id) return;
 
-    const totalScore = round.holes.reduce((acc, h) => acc + h.score, 0);
+    const totalScore = round.holes.reduce((acc, h) => acc + (h.score ?? 0), 0);
     const endedAt = new Date().toISOString();
 
-    await RoundStore.update(round.id, { totalScore, endedAt });
-    await syncRound(round.id);
+    try {
+      await RoundStore.update(round.id, { totalScore, endedAt });
+      // kick off sync via app context helper (if provided)
+      if (typeof syncRound === 'function') {
+        await syncRound(round.id);
+      } else {
+        // fallback: attempt to process sync queue
+        // (processSync is available from LocalData if needed)
+      }
+
+      setTracker('step', 'summary');
+    } catch (e) {
+      console.error('Failed to finish round', e);
+    }
   };
+
+  /* -------------------------
+     UI navigation helpers
+     ------------------------- */
 
   const handleHoleClick = (holeNum: number) => {
     setTracker({ viewingHoleNum: holeNum, step: 'viewing' });
@@ -373,7 +427,6 @@ export default function RoundTracker() {
 
   const handleEdit = () => {
     if (!round.id) return;
-
     setRound('currentHoleNum', 1);
     loadHoleForEditing(1);
     setTracker({ editingHoleNum: 1, step: 'edit' });
@@ -382,7 +435,6 @@ export default function RoundTracker() {
 
   const handleEditHole = (holeNum: number) => {
     if (!round.id) return;
-
     setRound('currentHoleNum', holeNum);
     loadHoleForEditing(holeNum);
     setTracker({ editingHoleNum: holeNum, step: 'edit' });
@@ -404,7 +456,22 @@ export default function RoundTracker() {
     setSearchParams({ mode: undefined, hole: undefined });
   };
 
-  // Load round from URL params on mount
+  const addClubToHole = (club: LocalClub) => {
+    setHoleInput(
+      produce((s) => {
+        const selected = new Set(s.selectedClubs.map((c) => c.id));
+        if (selected.has(club.id)) {
+          s.selectedClubs = s.selectedClubs.filter((c) => c.id !== club.id);
+        } else {
+          s.selectedClubs = [...s.selectedClubs, club];
+        }
+      }),
+    );
+  };
+
+  /* -------------------------
+     onMount: load round from URL
+     ------------------------- */
   onMount(async () => {
     const idStr = params.id;
     const mode = searchParams.mode;
@@ -415,7 +482,7 @@ export default function RoundTracker() {
       return;
     }
 
-    const rid = parseInt(idStr);
+    const rid = parseInt(idStr, 10);
     if (isNaN(rid)) {
       setTracker({ loading: false, step: 'setup' });
       return;
@@ -428,20 +495,22 @@ export default function RoundTracker() {
         return;
       }
 
-      // Load course definitions
+      // Load course hole definitions (normalized)
       let holeDefs: StoredHoleDefinition[] = [];
       if (roundData.courseId) {
         try {
-          const fullCourse = await CourseStore.fetchById(roundData.courseId);
+          // fetchById expects serverId; support both serverId/local id
+          const courseServerId = roundData.courseId;
+          const fullCourse = await CourseStore.fetchById(courseServerId);
           holeDefs = fullCourse?.holeDefinitions ?? [];
         } catch (e) {
           console.warn('Could not load course definitions', e);
         }
       }
 
-      // Load existing holes
-      const existingHoles = await HoleStore.getForRound(rid);
-      existingHoles.sort((a, b) => a.holeNumber - b.holeNumber);
+      // Load existing holes (authoritative)
+      await refreshHolesFromDb(rid);
+      const existingHoles = round.holes; // updated by refreshHolesFromDb
 
       setRound({
         id: rid,
@@ -457,7 +526,7 @@ export default function RoundTracker() {
       const roundSynced = roundData.syncStatus === SyncStatus.SYNCED;
 
       if (mode === 'edit' && holeStr) {
-        const holeNum = parseInt(holeStr);
+        const holeNum = parseInt(holeStr, 10);
         if (!isNaN(holeNum) && holeNum >= 1 && holeNum <= 18) {
           setRound('currentHoleNum', holeNum);
           loadHoleForEditing(holeNum);
@@ -466,7 +535,7 @@ export default function RoundTracker() {
           setTracker({ step: 'summary', loading: false });
         }
       } else if (mode === 'view' && holeStr) {
-        const holeNum = parseInt(holeStr);
+        const holeNum = parseInt(holeStr, 10);
         if (!isNaN(holeNum)) {
           setTracker({
             viewingHoleNum: holeNum,
@@ -496,6 +565,10 @@ export default function RoundTracker() {
     }
   });
 
+  /* -------------------------
+     Render (keeps your existing child components)
+     ------------------------- */
+
   return (
     <div class="min-h-screen flex flex-col bg-golf-dark text-white">
       <Show when={!tracker.loading} fallback={null}>
@@ -524,7 +597,13 @@ export default function RoundTracker() {
             holeInput={holeInput}
             addClubToHole={addClubToHole}
             setHoleInput={setHoleInput}
-            clubs={clubsQuery.data ?? []}
+            clubs={clubs ?? []}
+            onEndRound={async () => {
+              if (confirm('End round now? You can resume it later.')) {
+                await finishRound();
+                navigate('/');
+              }
+            }}
           />
         </Show>
 
@@ -532,7 +611,7 @@ export default function RoundTracker() {
           <RoundSummary
             courseName={round.courseName}
             holes={round.holes}
-            clubs={clubsQuery.data ?? []}
+            clubs={clubs() ?? []}
             isSynced={isRoundSynced()}
             onAction={() => (isRoundSynced() ? navigate('/') : finishRound())}
             onHoleClick={handleHoleClick}
@@ -556,7 +635,7 @@ export default function RoundTracker() {
               <HoleDetailView
                 holes={round.holes}
                 hole={hole()}
-                clubs={clubsQuery.data ?? []}
+                clubs={clubs() ?? []}
                 courseName={round.courseName}
                 onBack={handleBackFromViewing}
                 onNavigate={handleNavigateHoleInView}

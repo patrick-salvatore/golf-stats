@@ -1,5 +1,5 @@
 import { type Component, Show } from 'solid-js';
-import type { LocalClub } from '~/lib/local-data';
+import type { LocalClub } from '~/lib/stores';
 import { ClubDisplay } from './club_display';
 
 // Hole type matching round_summary
