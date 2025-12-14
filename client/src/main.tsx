@@ -9,7 +9,7 @@ const RoundTracker = lazy(() => import('./pages/round_tracker'));
 const History = lazy(() => import('./pages/history'));
 const Dashboard = lazy(() => import('./pages/dashboard'));
 const Bag = lazy(() => import('./pages/bag'));
-const CourseCreator = lazy(() => import('./pages/course_creator'));
+const CourseCreator = lazy(() => import('./pages/course_creator/course_creator'));
 const CourseManager = lazy(() => import('./pages/course_manager'));
 
 const Login = lazy(() => import('./pages/login'));

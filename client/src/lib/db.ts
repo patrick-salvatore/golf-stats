@@ -61,7 +61,7 @@ export type HoleDefinition = BaseEntity & {
   par: number;
   handicap: number;
 
-  // Geo fields
+  // Geo fields of Green
   lat: number;
   lng: number;
   front_lat: number;
