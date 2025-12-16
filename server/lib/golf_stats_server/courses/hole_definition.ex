@@ -14,6 +14,7 @@ defmodule GolfStatsServer.Courses.HoleDefinition do
     field(:back_lng, :float)
     field(:hazards, :map)
     field(:geo_features, :map)
+    field(:trajectory, :map)
     belongs_to(:course, GolfStatsServer.Courses.Course)
     has_many(:tee_boxes, GolfStatsServer.Courses.TeeBox, on_replace: :delete)
 
@@ -35,6 +36,7 @@ defmodule GolfStatsServer.Courses.HoleDefinition do
       :back_lng,
       :hazards,
       :geo_features,
+      :trajectory,
       :course_id
     ])
     |> validate_required([:hole_number, :par])

@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { UnifiedHoleFeatures } from '~/pages/course_creator/types';
 
 export const SyncStatus = {
   PENDING: 0,
@@ -61,17 +62,21 @@ export type HoleDefinition = BaseEntity & {
   par: number;
   handicap: number;
 
-  // Geo fields of Green
-  lat: number;
-  lng: number;
-  front_lat: number;
-  front_lng: number;
-  back_lat: number;
-  back_lng: number;
+  // Pin positions (preserved for backward compatibility)
+  lat?: number;
+  lng?: number;
+  front_lat?: number;
+  front_lng?: number;
+  back_lat?: number;
+  back_lng?: number;
 
-  hazards: any;
-  geo_features: any;
+  // NEW: Unified features with stable IDs
+  features?: UnifiedHoleFeatures;
 
+  // DEPRECATED: Legacy fields for migration
+  hazards?: any;
+  geo_features?: any;
+  trajectory?: GeoJSON.LineString | null;
   tee_boxes?: TeeBox[];
 };
 

@@ -13,6 +13,7 @@ import {
 import * as roundApi from '~/api/rounds';
 import * as bagApi from '~/api/bag';
 import * as courseApi from '~/api/courses';
+import { createEmptyFeatures } from '~/pages/course_creator/feature_utils';
 
 /* ============================
    Local-friendly typings
@@ -632,11 +633,29 @@ export const CourseStore = {
   async getById(id: number): Promise<LocalCourse | null> {
     const c = await db.courses.get(id);
     if (!c) return null;
+    
     const holeDefinitions = await db.hole_definitions
       .where('courseId')
       .equals(id)
       .toArray();
-    return { ...c, holeDefinitions } as LocalCourse;
+      
+    // Auto-migrate holes that need migration
+    const migratedHoles = await Promise.all(
+      holeDefinitions.map(async (hole) => {
+        // Ensure features exist for all holes
+        if (!hole.features) {
+          const emptyFeatures = createEmptyFeatures();
+          await db.hole_definitions.update(hole.id!, { 
+            features: emptyFeatures 
+          });
+          return { ...hole, features: emptyFeatures };
+        }
+        
+        return hole;
+      })
+    );
+    
+    return { ...c, holeDefinitions: migratedHoles } as LocalCourse;
   },
 
   async getByServerId(serverId: number): Promise<LocalCourse | null> {
@@ -795,21 +814,20 @@ export const CourseStore = {
       lat: course.lat,
       lng: course.lng,
       status: 'published',
-      hole_definitions: holeDefs.map((hd) => ({
-        hole_number: hd.holeNumber,
-        par: hd.par,
-        yardage: (hd as any).yardage,
-        handicap: hd.handicap,
-        lat: hd.lat,
-        lng: hd.lng,
-        front_lat: hd.front_lat,
-        front_lng: hd.front_lng,
-        back_lat: hd.back_lat,
-        back_lng: hd.back_lng,
-        hazards: hd.hazards,
-        geo_features: hd.geo_features,
-        tee_boxes: (hd as any).tee_boxes,
-      })),
+      hole_definitions: holeDefs.map((hd) => {        
+        return {
+          hole_number: hd.holeNumber,
+          par: hd.par,
+          yardage: (hd as any).yardage,
+          handicap: hd.handicap,
+          lat: hd.lat,
+          lng: hd.lng,
+          front_lat: hd.front_lat,
+          front_lng: hd.front_lng,
+          back_lat: hd.back_lat,
+          back_lng: hd.back_lng,
+        };
+      }),
     };
 
     const serverCourse = await courseApi.createCourse(payload);

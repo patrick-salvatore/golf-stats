@@ -1,4 +1,4 @@
-/// map_editor.tsx
+/// map_editor.tsx - Refactored to use MapDrawingManager
 import {
   createEffect,
   onMount,
@@ -8,29 +8,15 @@ import {
   Show,
   Accessor,
 } from 'solid-js';
-import { createShortcut } from '@solid-primitives/keyboard';
 import maplibregl from 'maplibre-gl';
 import * as turf from '@turf/turf';
-import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import {
-  DRAW_STYLES,
-  ensureHeatmapLayer,
-  GREENS_FILL,
-  GREENS_HEATMAP,
-  GREENS_HIT,
-  GREENS_LINE,
-  GREENS_POINT,
-  GREENS_SRC,
-  HEATMAP_SRC,
-  makeFeatureId,
-  SATELLITE_STYLE,
-} from './map_editor_utils';
-import { createStore } from 'solid-js/store';
-import { MapMode } from './types';
+import { SATELLITE_STYLE } from './map_editor_utils';
+import { MapDrawingManager, TooltipData } from './map_drawing_manager';
+import { FeatureType, HoleFeature } from './types';
 
-type DrawMode = 'polygon' | 'point' | 'circle' | 'slope';
+type DrawMode = 'polygon' | 'point' | 'circle' | 'slope' | 'trajectory';
 type Mode = 'view' | 'pick_location' | 'draw' | 'edit';
 
 export interface MarkerSpec {
@@ -41,7 +27,11 @@ export interface MarkerSpec {
 }
 
 export interface MapEditorProps {
-  initialGeoJSON: GeoJSON.FeatureCollection | null;
+  // NEW: Unified features system
+  features: GeoJSON.FeatureCollection;
+  trajectory: HoleFeature<'trajectory'> | null;
+  
+  // Existing props
   markers: Accessor<MarkerSpec[]>;
   center: [number, number];
   zoom?: number;
@@ -49,139 +39,64 @@ export interface MapEditorProps {
   drawMode?: Accessor<DrawMode>;
   style?: any;
   onLocationPick?: (lat: number, lng: number) => void;
+  
+  // NEW: Enhanced callbacks with stable IDs and types
+  onFeatureCreate?: (type: FeatureType, geometry: GeoJSON.Geometry, properties?: any) => void;
+  onFeatureUpdate?: (featureId: string, updates: { geometry?: GeoJSON.Geometry; properties?: any }) => void;
+  onFeatureDelete?: (featureId: string) => void;
+  onEditModeEnter?: () => void;
+  onEditModeExit?: () => void;
+  
+  // DEPRECATED: Legacy callbacks for backward compatibility
+  initialGeoJSON?: GeoJSON.FeatureCollection | null; // For backward compatibility
   onDrawCreate?: (feature: GeoJSON.Feature) => void;
   onDrawUpdate?: (feature: GeoJSON.Feature) => void;
   onDrawDelete?: (featureId: string) => void;
-  onEditModeEnter?: () => void;
-  onEditModeExit?: () => void;
 }
-
-type EditStore = {
-  activeFeatureId: string | null;
-  history: GeoJSON.FeatureCollection[];
-  historyIndex: number | null;
-  selectedVertexIndex: number | null;
-};
 
 export default function MapEditor(props: MapEditorProps): JSX.Element {
   let containerRef: HTMLDivElement | undefined;
-  const [map, setMap] = createSignal<maplibregl.Map | null>(null);
-  const [draw, setDraw] = createSignal<MapboxDraw | null>(null);
+  let tooltipRef: HTMLDivElement | undefined;
 
-  const [internalMode, setInternalMode] = createSignal<MapMode>(
-    props.mode?.() || 'view',
+  // Signals for map and manager instances
+  const [map, setMap] = createSignal<maplibregl.Map | null>(null);
+  const [manager, setManager] = createSignal<MapDrawingManager | null>(null);
+
+  // UI state
+  const [tooltip, setTooltip] = createSignal<TooltipData | null>(null);
+  const [internalMode, setInternalMode] = createSignal<Mode>(
+    props.mode() || 'view',
   );
-  const [internalDrawMode, setinternalDrawMode] = createSignal(props.drawMode);
+
+  // Circle drawing state (for custom circle mode)
   const [draftPoly, setDraftPoly] = createSignal<GeoJSON.Polygon | null>(null);
   const [circleCenter, setCircleCenter] = createSignal<[number, number] | null>(
     null,
   );
 
-  const [editStore, setEditStore] = createStore<EditStore>({
-    activeFeatureId: null,
-    history: [],
-    historyIndex: -1,
-    selectedVertexIndex: null,
-  });
-
   let isMouseDown = false;
   let dragStart: maplibregl.LngLat | null = null;
 
-  // Initialize Mapbox Draw
-  function initDraw(m: maplibregl.Map) {
-    const d = new MapboxDraw({
-      displayControlsDefault: false,
-      userProperties: true,
-      styles: DRAW_STYLES,
-      controls: {}, // We control modes programmatically
-    });
+  // Update mode display when props change
+  createEffect(() => {
+    setInternalMode(props.mode());
+  });
 
-    m.addControl(d as any);
-    setDraw(d);
-
-    m.on('draw.create', (e) => handleDrawEvent('create', e));
-    m.on('draw.update', (e) => handleDrawEvent('update', e));
-    m.on('draw.delete', (e) => handleDrawEvent('delete', e));
-    m.on('draw.selectionchange', (e) => {
-      const selected = e.features;
-      if (selected.length > 0) {
-        setInternalMode('edit');
-        if (selected[0].id) {
-          enterEditFeature(selected[0].id as string);
-        }
-      } else {
-        exitEdit();
-      }
-    });
-
-    // Initial Data Load
-    if (props.initialGeoJSON) {
-      d.set(props.initialGeoJSON);
-      updateHeatmapSource(props.initialGeoJSON);
-    }
-  }
-
-  function handleDrawEvent(type: 'create' | 'update' | 'delete', e: any) {
-    const features = e.features;
-    if (!features || features.length === 0) return;
-
-    // Update heatmap source whenever features change
-    const d = draw();
-    if (d) {
-      updateHeatmapSource(d.getAll());
-    }
-
-    features.forEach((f: any) => {
-      // Ensure ID
-      if (!f.id) f.id = makeFeatureId();
-      // Ensure properties based on draw mode if missing
-      if (type === 'create') {
-        if (!f.properties) f.properties = {};
-        if (!f.properties.id) f.properties.id = f.id;
-
-        if (props.drawMode === 'slope' && f.geometry.type === 'Point') {
-          f.properties.type = 'slope';
-          f.properties.intensity = 1.0;
-          // Must update back to Draw so it has the properties
-          draw()?.add(f);
-        } else if (f.geometry.type === 'Polygon') {
-          // Default green type
-          if (!f.properties.type) f.properties.type = 'green';
-        }
-      }
-
-      const featureWithId = { ...f, id: f.id };
-
-      if (type === 'create' && props.onDrawCreate) {
-        props.onDrawCreate(featureWithId);
-      } else if (type === 'update' && props.onDrawUpdate) {
-        props.onDrawUpdate(featureWithId);
-      } else if (type === 'delete' && props.onDrawDelete) {
-        props.onDrawDelete(featureWithId.id as string);
-      }
-    });
-  }
-
-  function updateHeatmapSource(fc: GeoJSON.FeatureCollection) {
+  // Update map markers when props.markers change
+  createEffect((prevMarkers: maplibregl.Marker[] | undefined) => {
+    const markers = props.markers?.();
     const m = map();
-    if (!m) return;
-    const src = m.getSource(HEATMAP_SRC) as
-      | maplibregl.GeoJSONSource
-      | undefined;
-    if (src) {
-      src.setData(fc as any);
-    } else {
-      // Create source if missing (unlikely if init order is correct)
-    }
-  }
 
-  function refreshPropMarkers(markers: MarkerSpec[]) {
-    const m = map();
     if (!m) return;
 
+    // Remove previous markers
+    prevMarkers?.forEach((pm) => pm.remove());
+
+    // Add new markers
     const newMarkers: maplibregl.Marker[] = [];
     for (const mk of markers) {
       if (mk.lat == null || mk.lng == null) continue;
+
       const el = document.createElement('div');
       el.className = 'prop-marker';
       el.style.width = '12px';
@@ -189,19 +104,85 @@ export default function MapEditor(props: MapEditorProps): JSX.Element {
       el.style.borderRadius = '6px';
       el.style.background = mk.color || '#10b981';
       el.style.boxShadow = '0 0 6px rgba(0,0,0,0.4)';
+
       const marker = new maplibregl.Marker({ element: el })
         .setLngLat([mk.lng, mk.lat])
         .addTo(m);
+
+      marker.on('click', console.log);
+
       newMarkers.push(marker);
     }
 
     return newMarkers;
-  }
+  });
 
+  // Update trajectory when it changes
+  createEffect(() => {
+    const mgr = manager();
+    if (mgr && props.trajectory) {
+      mgr.setTrajectory(props.trajectory.geometry as GeoJSON.LineString);
+    } else if (mgr) {
+      mgr.setTrajectory(null);
+    }
+  });
+
+  // Update features when they change (when currentHole changes)
+  createEffect(() => {
+    const mgr = manager();
+    const features = props.features;
+    
+    if (mgr && features) {
+      // Clear existing features and reload with new ones
+      const drawInstance = mgr.getDrawInstance();
+      if (drawInstance) {
+        drawInstance.deleteAll();
+        if (features.features.length > 0) {
+          drawInstance.set(features);
+        }
+        // Ensure we're in simple select mode (not drawing mode)
+        drawInstance.changeMode('simple_select');
+      }
+    }
+  });
+
+  // Update drawing mode when it changes
+  createEffect(() => {
+    const mgr = manager();
+    const drawInstance = mgr?.getDrawInstance();
+    const drawMode = props.drawMode?.();
+    if (!drawInstance || !mgr || !drawMode) return;
+
+    if (props.mode() === 'draw') {
+      if (drawMode === 'polygon') {
+        mgr.changeMode('draw_polygon');
+      } else if (drawMode === 'point' || drawMode === 'slope') {
+        mgr.changeMode('draw_point');
+      } else if (drawMode === 'trajectory') {
+        mgr.changeMode('draw_line_string');
+      } else if (drawMode === 'circle') {
+        mgr.changeMode('simple_select');
+        startCircleDraft();
+      }
+    } else if (props.mode() === 'edit') {
+      const selected = mgr.getSelectedFeatures();
+      if (selected.length > 0) {
+        mgr.changeMode('direct_select', { featureId: selected[0].id });
+      } else {
+        mgr.changeMode('simple_select');
+      }
+    } else if (props.mode() === 'view') {
+      mgr.changeMode('simple_select', { featureIds: [] });
+    } else {
+      mgr.changeMode('simple_select');
+    }
+  });
+
+  // Circle drawing functions
   function startCircleDraft() {
     setCircleCenter(null);
     setDraftPoly(null);
-    setInternalMode('drawing');
+    setInternalMode('draw');
   }
 
   function updateCircleDraft(lngLat: maplibregl.LngLat) {
@@ -219,23 +200,33 @@ export default function MapEditor(props: MapEditorProps): JSX.Element {
   function finishCircleDraft() {
     const dp = draftPoly();
     if (!dp) {
-      setInternalMode('none');
+      setInternalMode('view');
       return;
     }
+
+    const id = `green.${window.crypto.randomUUID()}`;
     const feat: GeoJSON.Feature = {
       type: 'Feature',
-      id: makeFeatureId(),
-      properties: { type: 'green', isCircle: true },
+      id: id,
+      properties: { type: 'green', isCircle: true, id },
       geometry: dp,
     };
 
-    // Add to Mapbox Draw manually
-    draw()?.add(feat);
-    handleDrawEvent('create', { features: [feat] });
+    // Add to MapboxDraw
+    const mgr = manager();
+    const drawInstance = mgr?.getDrawInstance();
+    if (drawInstance) {
+      drawInstance.add(feat);
+    }
+
+    // Notify parent
+    if (props.onDrawCreate) {
+      props.onDrawCreate(feat);
+    }
 
     setDraftPoly(null);
     setCircleCenter(null);
-    setInternalMode('none');
+    setInternalMode('view');
   }
 
   function syncDraftToMap() {
@@ -263,8 +254,10 @@ export default function MapEditor(props: MapEditorProps): JSX.Element {
     }
 
     const src = m.getSource(DRAFT_SRC_ID) as maplibregl.GeoJSONSource;
-    if (draftPoly()) {
-      const coords = draftPoly()!.coordinates[0];
+    const dp = draftPoly();
+
+    if (dp) {
+      const coords = dp.coordinates[0];
       const features: GeoJSON.Feature[] = [
         {
           type: 'Feature',
@@ -278,402 +271,22 @@ export default function MapEditor(props: MapEditorProps): JSX.Element {
     }
   }
 
-  function performUndo() {
-    if (editStore.historyIndex && editStore.historyIndex > 0) {
-      const idx = editStore.historyIndex - 1;
-      const fc = editStore.history[idx];
-      if (editStore.activeFeatureId) {
-        const feat = fc.features.find(
-          (f) => (f.properties as any)?.id === editStore.activeFeatureId,
-        );
-        if (feat && props.onDrawUpdate) {
-          props.onDrawUpdate(feat);
-        }
-      }
-      setEditStore('historyIndex', idx);
-    }
-  }
-
-  function performRedo() {
-    if (
-      editStore.historyIndex &&
-      editStore.historyIndex < editStore.history.length - 1
-    ) {
-      const idx = editStore.historyIndex + 1;
-      const fc = editStore.history[idx];
-
-      if (editStore.activeFeatureId) {
-        const feat = fc.features.find(
-          (f) => (f.properties as any)?.id === editStore.activeFeatureId,
-        );
-        if (feat && props.onDrawUpdate) {
-          props.onDrawUpdate(feat);
-        }
-      }
-
-      setEditStore('historyIndex', idx);
-    }
-  }
-
-  function deleteVertex(featureId: string, index: number) {
-    const m = map();
-    if (!m) return;
-    const src = m.getSource(GREENS_SRC) as maplibregl.GeoJSONSource | undefined;
-    if (!src) return;
-    const fc: GeoJSON.FeatureCollection = props.initialGeoJSON
-      ? JSON.parse(JSON.stringify(props.initialGeoJSON))
-      : { type: 'FeatureCollection', features: [] };
-
-    if (!fc?.features) return;
-    const feat = fc.features.find(
-      (f) => (f.properties as any)?.id === featureId,
-    );
-    if (!feat || !feat.geometry) return;
-
-    if (feat.geometry.type === 'Point') {
-      if (props.onDrawDelete) {
-        props.onDrawDelete(featureId);
-        exitEdit();
-      }
-      return;
-    }
-
-    if (feat.geometry.type !== 'Polygon') return;
-
-    let coords = (feat.geometry as GeoJSON.Polygon).coordinates[0].slice();
-    if (coords.length <= 4) return;
-    coords.splice(index, 1);
-    coords[coords.length - 1] = coords[0];
-
-    const updatedPoly: GeoJSON.Polygon = {
-      type: 'Polygon',
-      coordinates: [coords],
-    };
-    feat.geometry = updatedPoly as any;
-    src.setData(fc as any);
-    setupVertexMarkersForPolygon(updatedPoly, featureId);
-    if (props.onDrawUpdate) {
-      props.onDrawUpdate({
-        type: 'Feature',
-        properties: { ...(feat.properties as any) },
-        geometry: updatedPoly,
-      });
-    }
-  }
-
-  function handleDelete() {
-    if (internalMode() === 'editing' && editStore.activeFeatureId) {
-      if (editStore.selectedVertexIndex !== null) {
-        deleteVertex(
-          editStore.activeFeatureId!,
-          editStore.selectedVertexIndex!,
-        );
-        setSelectedVertexIndex(undefined);
-        return;
-      }
-      if (props.onDrawDelete) {
-        props.onDrawDelete(editStore.activeFeatureId!);
-        exitEdit();
-      }
-    }
-  }
-
-  function enterEditFeature(featureId: string) {
-    setEditStore('activeFeatureId', featureId);
-    setInternalMode('editing');
-    props.onEditModeEnter?.();
-  }
-
-  function exitEdit() {
-    setEditStore('activeFeatureId', null);
-    setInternalMode('none');
-    // clearVertexMarkers();
-    props.onEditModeExit?.();
-  }
-
-  function finishDraft() {
-    if (effectiveDrawMode() === 'circle') {
-      const dp = draftPoly();
-      if (!dp) {
-        setInternalMode('none');
-        return;
-      }
-      const feat: GeoJSON.Feature = {
-        type: 'Feature',
-        properties: { id: makeFeatureId(), type: 'green', isCircle: true },
-        geometry: dp,
-      };
-
-      if (props.onDrawCreate) props.onDrawCreate(feat);
-
-      setDraftPoly(null);
-      setCircleCenter(null);
-      setInternalMode('none');
-      return;
-    }
-
-    const dp = draftPoly();
-    if (!dp) return;
-    const ring = dp.coordinates[0].slice();
-    if (ring.length < 3) {
-      setDraftPoly(null);
-      setInternalMode('none');
-      return;
-    }
-    const closed = [...ring, ring[0]];
-    const poly: GeoJSON.Polygon = { type: 'Polygon', coordinates: [closed] };
-    const feat: GeoJSON.Feature = {
-      type: 'Feature',
-      properties: { id: makeFeatureId() },
-      geometry: poly,
-    };
-
-    if (props.onDrawCreate) props.onDrawCreate(feat);
-
-    setDraftPoly(null);
-    setInternalMode('none');
-  }
-
-  function handleMapClick(e: maplibregl.MapMouseEvent) {
-    if (internalMode() === 'pick_location' && props.onLocationPick) {
-      props.onLocationPick(e.lngLat.lat, e.lngLat.lng);
-    }
-
-    // if (internalMode() === 'drawing') {
-    //   addDraftVertex(e.lngLat);
-    //   return;
-    // }
-
-    // const m = map();
-    // if (!m) return;
-    // const features = m.queryRenderedFeatures(e.point, {
-    //   layers: [GREENS_FILL],
-    // });
-    // console.log(e, features)
-    // if (features?.length) {
-    //   const f = features[0];
-    //   const id = (f.properties as any)?.id as string | undefined;
-    //   if (id) {
-    //     enterEditFeature(id);
-    //     return;
-    //   }
-    // }
-
-    // if (internalMode() === 'editing') {
-    //   const edgeFeatures = m.queryRenderedFeatures(e.point, {
-    //     layers: [GREENS_HIT],
-    //   });
-    //   if (edgeFeatures?.length) {
-    //     const f = edgeFeatures[0];
-    //     const id = (f.properties as any)?.id as string | undefined;
-    //     if (id) insertVertexAtEdge(id, e.lngLat);
-    //   } else {
-    //     setSelectedVertexIndex(undefined);
-    //   }
-    // }
-  }
-
-  function ensureGreensLayers(m: maplibregl.Map) {
-    if (!m.getStyle()) return;
-
-    if (!m.getSource(GREENS_SRC)) {
-      m.addSource(GREENS_SRC, {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: props.initialGeoJSON?.features ?? [],
-        },
-      } as any);
-    } else {
-      const src = m.getSource(GREENS_SRC) as maplibregl.GeoJSONSource;
-      if (props.initialGeoJSON) src.setData(props.initialGeoJSON as any);
-    }
-
-    if (!m.getLayer(GREENS_FILL)) {
-      m.addLayer({
-        id: GREENS_FILL,
-        type: 'fill',
-        source: GREENS_SRC,
-        paint: { 'fill-color': '#10b981', 'fill-opacity': 0.2 },
-      } as any);
-    }
-
-    if (!m.getLayer(GREENS_LINE)) {
-      m.addLayer({
-        id: GREENS_LINE,
-        type: 'line',
-        source: GREENS_SRC,
-        paint: { 'line-color': '#10b981', 'line-width': 2 },
-      } as any);
-    }
-
-    if (!m.getLayer(GREENS_HIT)) {
-      m.addLayer({
-        id: GREENS_HIT,
-        type: 'line',
-        source: GREENS_SRC,
-        paint: { 'line-opacity': 0, 'line-width': 18 },
-      } as any);
-    }
-
-    if (!m.getLayer(GREENS_HEATMAP)) {
-      m.addLayer({
-        id: GREENS_HEATMAP,
-        type: 'heatmap',
-        source: GREENS_SRC,
-        filter: ['==', 'type', 'slope'],
-        maxzoom: 24,
-        paint: {
-          'heatmap-weight': 1,
-          'heatmap-intensity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            0,
-            1,
-            18,
-            3,
-          ],
-          'heatmap-color': [
-            'interpolate',
-            ['linear'],
-            ['heatmap-density'],
-            0,
-            'rgba(33,102,172,0)',
-            0.2,
-            'rgb(103,169,207)',
-            0.4,
-            'rgb(209,229,240)',
-            0.6,
-            'rgb(253,219,199)',
-            0.8,
-            'rgb(239,138,98)',
-            1,
-            'rgb(178,24,43)',
-          ],
-          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 18, 20],
-          'heatmap-opacity': 0.8,
-        },
-      } as any);
-    }
-
-    // console.log(m.getLayer(GREENS_POINT) )
-    if (!m.getLayer(GREENS_POINT)) {
-      m.addLayer({
-        id: GREENS_POINT,
-        type: 'circle',
-        source: GREENS_SRC,
-        filter: ['==', 'type', 'slope'],
-        paint: {
-          'circle-radius': 4,
-          'circle-color': '#fbb03b',
-          'circle-stroke-width': 1,
-          'circle-stroke-color': '#fff',
-          'circle-opacity': 0.8,
-        },
-      } as any);
-    }
-  }
-
-  // undo / redo
-  createShortcut(['Meta', 'z'], performUndo);
-  createShortcut(['Meta', 'Shift', 'z'], performRedo);
-
-  // delete
-  createShortcut(['Delete'], handleDelete, { preventDefault: false });
-  createShortcut(['Backspace'], handleDelete, {
-    preventDefault: false,
-  });
-
-  // exit / save
-  createShortcut(['Escape'], () => {
-    if (internalMode() === 'draw') {
-      setDraftPoly(null);
-      setCircleCenter(null);
-      setInternalMode('view');
-    } else if (internalMode() === 'edit') {
-      exitEdit();
-    }
-  });
-  createShortcut(['Enter'], () => {
-    if (internalMode() === 'draw') {
-      finishDraft();
-    }
-  });
-
+  // Update draft visualization when it changes
   createEffect(() => {
-    setInternalMode(props.mode());
+    syncDraftToMap();
   });
-
-  // update map markers when props.markers change
-  createEffect((prevMarkers: maplibregl.Marker[] | undefined) => {
-    const markers = props.markers?.();
-    prevMarkers?.forEach((pm) => pm.remove());
-    const newMarkers = refreshPropMarkers(markers);
-    return newMarkers;
-  });
-
-  // createEffect(() => {
-  //   const d = draw();
-  //   if (!d) return;
-
-  //   if (props.mode === 'draw') {
-  //     if (props.drawMode === 'polygon') {
-  //       d.changeMode('draw_polygon');
-  //     } else if (props.drawMode === 'point' || props.drawMode === 'slope') {
-  //       d.changeMode('draw_point');
-  //     } else if (props.drawMode === 'circle') {
-  //       d.changeMode('simple_select'); // Stop native draw
-  //       startCircleDraft();
-  //     }
-  //   } else if (props.mode === 'edit') {
-  //     d.changeMode('simple_select');
-  //   } else if (props.mode === 'view') {
-  //     d.changeMode('simple_select');
-  //     // Deselect all
-  //     d.changeMode('simple_select', { featureIds: [] });
-  //   } else {
-  //     d.changeMode('simple_select');
-  //   }
-  // });
-
-  // createEffect(() => {
-  //   const d = draw();
-  //   if (!d || !props.initialGeoJSON) return;
-
-  //   const current = d.getAll();
-  //   if (
-  //     current.features.length === 0 &&
-  //     props.initialGeoJSON.features.length > 0
-  //   ) {
-  //     d.set(props.initialGeoJSON);
-  //     updateHeatmapSource(props.initialGeoJSON);
-  //   }
-  // });
-
-  // createEffect((prevCenter: [number, number] | undefined) => {
-  //   const m = map();
-  //   if (!m) return props.center;
-  //   if (props.center) {
-  //     const [lng, lat] = props.center;
-  //     const [pLng, pLat] = prevCenter || [null, null];
-  //     if (lng !== pLng || lat !== pLat) {
-  //       try {
-  //         m.flyTo({ center: props.center, zoom: props.zoom ?? 15 });
-  //       } catch (_) {}
-  //     }
-  //   }
-  //   return props.center;
-  // });
 
   onMount(() => {
     if (!containerRef) return;
 
+    // Create map instance
     const m = new maplibregl.Map({
       container: containerRef,
       style: props.style ?? (SATELLITE_STYLE as any),
       center: props.center ?? [-97.7431, 30.2672],
       zoom: props.zoom ?? 15,
+      minZoom: 14, // Prevent zooming out too far from the hole
+      maxZoom: 20, // Allow detailed zoom for precise drawing
       pitchWithRotate: false,
       touchPitch: false,
       maxPitch: 0,
@@ -682,92 +295,191 @@ export default function MapEditor(props: MapEditorProps): JSX.Element {
     m.addControl(new maplibregl.NavigationControl(), 'top-right');
 
     m.on('load', () => {
-      initDraw(m);
+      // Create and initialize drawing manager
+      const mgr = new MapDrawingManager(m, {
+        onDrawCreate: (feature) => {
+          const type = (feature.properties?.type as FeatureType) || 'green';
+          
+          // Use new unified callback if available
+          if (props.onFeatureCreate) {
+            props.onFeatureCreate(type, feature.geometry, feature.properties);
+          } 
+          // Fall back to legacy callback for backward compatibility
+          else if (props.onDrawCreate) {
+            props.onDrawCreate(feature);
+          }
+        },
+        onDrawUpdate: (feature) => {
+          // Use new unified callback if available
+          if (props.onFeatureUpdate && feature.id) {
+            props.onFeatureUpdate(feature.id as string, {
+              geometry: feature.geometry,
+              properties: feature.properties
+            });
+          } 
+          // Fall back to legacy callback for backward compatibility
+          else if (props.onDrawUpdate) {
+            props.onDrawUpdate(feature);
+          }
+        },
+        onDrawDelete: (featureId) => {
+          // Use new unified callback if available
+          if (props.onFeatureDelete) {
+            props.onFeatureDelete(featureId);
+          } 
+          // Fall back to legacy callback for backward compatibility
+          else if (props.onDrawDelete) {
+            props.onDrawDelete(featureId);
+          }
+        },
+        onSelectionChange: (features) => {
+          if (features.length > 0) {
+            setInternalMode('edit');
+            props.onEditModeEnter?.();
+          } else {
+            setInternalMode('view');
+            props.onEditModeExit?.();
+          }
+        },
+        onModeChange: (_mode) => {
+          // Handle mode changes if needed
+        },
+        onTooltipChange: setTooltip,
+        onCursorChange: (cursor) => {
+          m.getCanvas().style.cursor = cursor;
+        },
+        onLocationPick: props.onLocationPick,
+        onEscape: () => {
+          if (internalMode() === 'draw') {
+            setDraftPoly(null);
+            setCircleCenter(null);
+            setInternalMode('view');
+            mgr.changeMode('simple_select');
+          } else if (internalMode() === 'edit') {
+            setInternalMode('view');
+            mgr.changeMode('simple_select');
+            props.onEditModeExit?.();
+          }
+        },
+        onEnter: () => {
+          if (internalMode() === 'draw' && props.drawMode?.() === 'circle') {
+            finishCircleDraft();
+          }
+        },
+        onDelete: (featureId: string) => {
+          if (props.onFeatureDelete) {
+            props.onFeatureDelete(featureId);
+          } else if (props.onDrawDelete) {
+            props.onDrawDelete(featureId);
+          }
+        },
+      });
+
+      // Initialize with new features system or fall back to legacy
+      mgr.initialize(props.features || props.initialGeoJSON);
+      if (props.trajectory) {
+        mgr.setTrajectory(props.trajectory.geometry as GeoJSON.LineString);
+      }
+
+      setManager(mgr);
       setMap(m);
       setInternalMode(props.mode());
-      // syncDraftToMap();
     });
 
-    // m.on('styledata', () => {
-    //   ensureGreensLayers(m);
-    //   ensureHeatmapLayer(m);
-    // });
+    // Handle map clicks
+    m.on('click', (e) => {
+      const mgr = manager();
+      if (mgr) {
+        mgr.handleMapClick(e, props.mode());
+      }
+    });
 
-    // m.on('mousedown', (e) => {
-    //   if (internalMode() === 'drawing' && props.drawMode === 'circle') {
-    //     isMouseDown = true;
-    //     dragStart = e.lngLat;
-    //     m.dragPan.disable();
-    //   }
-    // });
+    // Handle circle drawing mouse events
+    m.on('mousedown', (e) => {
+      if (internalMode() === 'draw' && props.drawMode?.() === 'circle') {
+        isMouseDown = true;
+        dragStart = e.lngLat;
+        m.dragPan.disable();
+      }
+    });
 
-    // m.on('mousemove', (e) => {
-    //   if (internalMode() === 'drawing' && props.drawMode === 'circle') {
-    //     if (isMouseDown && dragStart && !circleCenter()) {
-    //       setCircleCenter([dragStart.lng, dragStart.lat]);
-    //     }
-    //     updateCircleDraft(e.lngLat);
-    //   }
-    // });
+    m.on('mousemove', (e) => {
+      if (internalMode() === 'draw' && props.drawMode?.() === 'circle') {
+        if (isMouseDown && dragStart && !circleCenter()) {
+          setCircleCenter([dragStart.lng, dragStart.lat]);
+        }
+        if (circleCenter()) {
+          updateCircleDraft(e.lngLat);
+        }
+      }
+    });
 
-    // m.on('mouseup', () => {
-    //   if (internalMode() === 'drawing' && props.drawMode === 'circle') {
-    //     if (isMouseDown && circleCenter()) {
-    //       finishCircleDraft();
-    //     }
-    //     isMouseDown = false;
-    //     dragStart = null;
-    //     m.dragPan.enable();
-    //   }
-    // });
-
-    m.on('click', handleMapClick);
-
-    // m.on('click', GREENS_HIT, (e) => {
-    //   if (internalMode() === 'editing' && e && e.features && e.features[0]) {
-    //     const id = (e.features[0].properties as any)?.id;
-    //     if (id) insertVertexAtEdge(id, e.lngLat);
-    //   }
-    // });
-
-    // m.on('click', GREENS_FILL, (e) => {
-    //   if (e && e.features && e.features[0]) {
-    //     const id = (e.features[0].properties as any)?.id;
-    //     if (id) enterEditFeature(id);
-    //   }
-    // });
-
-    // m.on('click', GREENS_POINT, (e) => {
-    //   console.log(e);
-    // if (e && e.features && e.features[0]) {
-    //   const id = (e.features[0].properties as any)?.id;
-    //   if (id) enterEditFeature(id);
-    // }
-    // });
+    m.on('mouseup', () => {
+      if (internalMode() === 'draw' && props.drawMode?.() === 'circle') {
+        if (isMouseDown && circleCenter()) {
+          finishCircleDraft();
+        }
+        isMouseDown = false;
+        dragStart = null;
+        m.dragPan.enable();
+      }
+    });
   });
 
   onCleanup(() => {
     const m = map();
-    const d = draw();
-    if (m && d) {
-      m.removeControl(d as any);
+    const mgr = manager();
+
+    // Clean up manager
+    if (mgr) {
+      mgr.cleanup();
     }
-    m?.remove();
+
+    // Remove map
+    if (m) {
+      m.remove();
+    }
   });
 
   return (
     <div class="relative w-full h-full rounded-xl overflow-hidden shadow-2xl border border-slate-700 bg-slate-900">
       <div ref={containerRef} class="w-full h-full" />
+
+      {/* Mode indicator */}
       <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg border border-slate-700 z-10 flex items-center gap-2">
         <div
           class={`w-2 h-2 rounded-full ${internalMode() === 'edit' ? 'bg-amber-500' : 'bg-blue-500'} animate-pulse`}
         />
-        <span class="uppercase tracking-wider">{internalMode()}</span>
+        <span class="uppercase tracking-wider">
+          {internalMode()}
+          {props.mode() === 'draw' &&
+            props.drawMode?.() === 'trajectory' &&
+            ' - Click points along fairway, double-click to finish'}
+        </span>
       </div>
-      <Show when={props.mode?.() === 'pick_location'}>
+
+      {/* Pick location prompt */}
+      <Show when={props.mode() === 'pick_location'}>
         <div class="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg border border-emerald-500/50 z-10">
           Click to set location
         </div>
+      </Show>
+
+      {/* Tooltip */}
+      <Show when={tooltip()}>
+        {(t) => (
+          <div
+            ref={tooltipRef}
+            class="absolute pointer-events-none bg-slate-900/95 text-white px-2 py-1 rounded text-xs font-medium shadow-lg border border-slate-600 z-20"
+            style={{
+              left: `${t().x}px`,
+              top: `${t().y}px`,
+              transform: 'translate(-50%, 0)',
+            }}
+          >
+            {t().text}
+          </div>
+        )}
       </Show>
     </div>
   );

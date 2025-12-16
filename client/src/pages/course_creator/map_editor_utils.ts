@@ -6,7 +6,7 @@ export const GREENS_FILL = 'greens-fill';
 export const GREENS_LINE = 'greens-line';
 export const GREENS_HIT = 'greens-hit';
 export const GREENS_POINT = 'greens-point';
-export const GREENS_HEATMAP = 'greens-heatmap'
+export const GREENS_HEATMAP = 'greens-heatmap';
 
 export const SATELLITE_STYLE = {
   version: 8,
@@ -32,7 +32,52 @@ export const SATELLITE_STYLE = {
 };
 
 export const DRAW_STYLES: any[] = [
-  // Polygon Fill (Inactive)
+  // LineString styles (for trajectory) - Inactive with hover
+  {
+    id: 'gl-draw-line-inactive',
+    type: 'line',
+    filter: [
+      'all',
+      ['==', 'active', 'false'],
+      ['==', '$type', 'LineString'],
+      ['!=', 'mode', 'static'],
+    ],
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+    paint: {
+      'line-color': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        '#60A5FA', // Lighter blue on hover
+        '#3B82F6',
+      ],
+      'line-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        5, // Thicker on hover
+        3,
+      ],
+      'line-dasharray': [2, 2],
+    },
+  },
+  // LineString styles (for trajectory) - Active/Drawing
+  {
+    id: 'gl-draw-line-active',
+    type: 'line',
+    filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'LineString']],
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+    paint: {
+      'line-color': '#2563EB',
+      'line-width': 4,
+      'line-dasharray': [2, 1],
+    },
+  },
+  // Polygon Fill (Inactive) with hover
   {
     id: 'gl-draw-polygon-fill-inactive',
     type: 'fill',
@@ -43,8 +88,18 @@ export const DRAW_STYLES: any[] = [
       ['!=', 'mode', 'static'],
     ],
     paint: {
-      'fill-color': '#10b981',
-      'fill-opacity': 0.2,
+      'fill-color': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        '#34D399', // Lighter green on hover
+        '#10b981',
+      ],
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        0.35, // More opaque on hover
+        0.2,
+      ],
     },
   },
   // Polygon Fill (Active)
@@ -57,7 +112,7 @@ export const DRAW_STYLES: any[] = [
       'fill-opacity': 0.2,
     },
   },
-  // Polygon Outline (Inactive)
+  // Polygon Outline (Inactive) with hover
   {
     id: 'gl-draw-polygon-stroke-inactive',
     type: 'line',
@@ -72,8 +127,18 @@ export const DRAW_STYLES: any[] = [
       'line-join': 'round',
     },
     paint: {
-      'line-color': '#10b981',
-      'line-width': 2,
+      'line-color': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        '#34D399', // Lighter green on hover
+        '#10b981',
+      ],
+      'line-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        3, // Thicker on hover
+        2,
+      ],
     },
   },
   // Polygon Outline (Active)
@@ -90,7 +155,7 @@ export const DRAW_STYLES: any[] = [
       'line-width': 2,
     },
   },
-  // Points (Slope/Markers) - Inactive
+  // Points (Slope/Markers) - Inactive with hover
   {
     id: 'gl-draw-point-inactive',
     type: 'circle',
@@ -101,9 +166,24 @@ export const DRAW_STYLES: any[] = [
       ['!=', 'mode', 'static'],
     ],
     paint: {
-      'circle-radius': 5,
-      'circle-color': '#fbb03b',
-      'circle-stroke-width': 1,
+      'circle-radius': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        8, // Larger on hover
+        5,
+      ],
+      'circle-color': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        '#FCD34D', // Lighter yellow on hover
+        '#fbb03b',
+      ],
+      'circle-stroke-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        2, // Thicker stroke on hover
+        1,
+      ],
       'circle-stroke-color': '#fff',
     },
   },
@@ -119,7 +199,7 @@ export const DRAW_STYLES: any[] = [
       'circle-stroke-color': '#fff',
     },
   },
-  // Vertex Points (for editing polygons)
+  // Vertex Points (for editing polygons and lines) with hover
   {
     id: 'gl-draw-polygon-and-line-vertex-stroke-inactive',
     type: 'circle',
@@ -130,10 +210,20 @@ export const DRAW_STYLES: any[] = [
       ['!=', 'mode', 'static'],
     ],
     paint: {
-      'circle-radius': 5,
-      'circle-color': '#fbb03b',
-      'circle-stroke-width': 1,
-      'circle-stroke-color': '#fff',
+      'circle-radius': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        11, // Larger on hover
+        8,
+      ],
+      'circle-color': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        '#60A5FA', // Lighter blue on hover
+        '#3B82F6',
+      ],
+      'circle-stroke-width': 3,
+      'circle-stroke-color': '#ffffff',
     },
   },
   {
@@ -146,34 +236,47 @@ export const DRAW_STYLES: any[] = [
       ['==', '$type', 'Point'],
     ],
     paint: {
-      'circle-radius': 7,
-      'circle-color': '#ef4444',
-      'circle-stroke-width': 2,
-      'circle-stroke-color': '#fff',
+      'circle-radius': 10,
+      'circle-color': '#1D4ED8',
+      'circle-stroke-width': 3,
+      'circle-stroke-color': '#ffffff',
     },
   },
-  // Midpoints (for inserting new vertices)
+  // Midpoints (for inserting new vertices) with hover
   {
     id: 'gl-draw-polygon-midpoint',
     type: 'circle',
     filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'midpoint']],
     paint: {
-      'circle-radius': 4,
-      'circle-color': '#fbb03b',
-      'circle-opacity': 0.8,
+      'circle-radius': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        7, // Larger on hover
+        4,
+      ],
+      'circle-color': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        '#FCD34D', // Lighter yellow on hover
+        '#fbb03b',
+      ],
+      'circle-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        1, // Fully opaque on hover
+        0.8,
+      ],
     },
   },
 ];
-
-export function makeFeatureId() {
-  return `green-${Math.random().toString(36).slice(2, 9)}`;
-}
 
 export function ensureHeatmapLayer(m: maplibregl.Map) {
   if (!m.getSource(HEATMAP_SRC)) {
     m.addSource(HEATMAP_SRC, {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
+      generatedId: true,
+      promotedId: 'id'
     } as any);
   }
 

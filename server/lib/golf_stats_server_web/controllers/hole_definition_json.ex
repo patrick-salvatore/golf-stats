@@ -30,6 +30,7 @@ defmodule GolfStatsServerWeb.HoleDefinitionJSON do
       back_lng: hole_definition.back_lng,
       hazards: hole_definition.hazards,
       geo_features: hole_definition.geo_features,
+      trajectory: hole_definition.trajectory,
       tee_boxes: tee_boxes_data(hole_definition.tee_boxes)
     }
   end

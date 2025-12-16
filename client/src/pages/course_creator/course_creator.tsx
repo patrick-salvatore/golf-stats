@@ -1,11 +1,9 @@
 import {
   createSignal,
-  Show,
   For,
   onMount,
   createMemo,
   createEffect,
-  Accessor,
   Switch,
   Match,
 } from 'solid-js';
@@ -13,31 +11,29 @@ import { useNavigate, useParams } from '@solidjs/router';
 import { type LocalCourse, CourseStore } from '~/lib/stores';
 import GooglePlacesAutocomplete from './google_places_autocomplete';
 import MapEditor from './map_editor';
-import { MapMode, DrawTool } from './types';
+import {
+  MapMode,
+  DrawTool,
+  FeatureType,
+  EnhancedHole,
+  UnifiedHoleFeatures,
+} from './types';
+import { calculateTeeToGreenDistance } from './trajectory_utils';
+import {
+  createFeature,
+  updateFeature,
+  createEmptyFeatures,
+  featuresToGeoJSON,
+  parseFeatureId,
+  getCollectionName,
+} from './feature_utils';
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
 
 type BuilderStep = 'init' | 'builder';
-type TeeBox = {
-  id?: number;
-  name: string;
-  color: string;
-  yardage: number;
-  lat: number;
-  lng: number;
-};
-type Hole = {
-  holeNumber: number;
-  par: number;
-  handicap: number;
-  lat?: number;
-  lng?: number;
-  front_lat?: number;
-  front_lng?: number;
-  back_lat?: number;
-  back_lng?: number;
-  geo_features?: any;
-  tee_boxes?: TeeBox[];
+// Use EnhancedHole for centralized feature management but with proper HoleDefinition interface
+type Hole = Omit<EnhancedHole, 'features'> & {
+  features?: UnifiedHoleFeatures;
 };
 
 type InitFormData = {
@@ -59,8 +55,7 @@ const DEFAULT_HOLES: Hole[] = Array.from({ length: 18 }, (_, i) => ({
   handicap: i + 1,
   lat: 0,
   lng: 0,
-  geo_features: null,
-  tee_boxes: [],
+  features: createEmptyFeatures(),
 }));
 
 const ensureHoles = (c: LocalCourse): LocalCourse => {
@@ -69,12 +64,15 @@ const ensureHoles = (c: LocalCourse): LocalCourse => {
 
   const merged = DEFAULT_HOLES.map((def) => {
     const found = existing.find((h) => h.holeNumber === def.holeNumber);
-    return (
-      found || {
-        ...def,
-        courseId: c.id,
-      }
-    );
+    if (found) {
+      // Ensure features exist
+      const features = found.features || createEmptyFeatures();
+      return { ...found, features };
+    }
+    return {
+      ...def,
+      courseId: c.id,
+    };
   });
   return { ...c, holeDefinitions: merged };
 };
@@ -132,6 +130,18 @@ export default function CourseBuilder() {
     }
   });
 
+  const currentHole = createMemo((): Hole | undefined => {
+    const hole = course()?.holeDefinitions.find(
+      (h) => h.holeNumber === selectedHoleNum(),
+    );
+    if (!hole) return undefined;
+
+    // Ensure we have features available
+    const features =
+      (hole as any).features || hole.features || createEmptyFeatures();
+    return { ...hole, features } as Hole;
+  });
+
   const pickCtx = createMemo(() => {
     const ctx = pickContext();
     if (!ctx) return null;
@@ -139,7 +149,9 @@ export default function CourseBuilder() {
   });
 
   const mapMarkers = createMemo(() => {
-    if (!course()) {
+    const holeNumber = currentHole()?.holeNumber;
+
+    if (!course() || !holeNumber) {
       return [];
     }
 
@@ -154,42 +166,49 @@ export default function CourseBuilder() {
     const holeDefinitions = course()!.holeDefinitions || [];
 
     if (mapMode() === 'view') {
-      markers.push(
-        ...holeDefinitions.flatMap((h) => {
-          const marks: any[] = [];
-          if (h.lat && h.lng) {
-            marks.push({
-              lat: h.lat,
-              lng: h.lng,
-              color: '#ffffff',
-            });
-          }
-          if (h.front_lat && h.front_lng) {
-            marks.push({
-              lat: h.front_lat,
-              lng: h.front_lng,
-              color: '#ef4444',
-            });
-          }
-          if (h.back_lat && h.back_lng) {
-            marks.push({
-              lat: h.back_lat,
-              lng: h.back_lng,
-              color: '#3b82f6',
-            });
-          }
-          return marks;
-        }),
-      );
+      const holeFeatures = holeDefinitions[holeNumber - 1];
+
+      if (holeFeatures.lat && holeFeatures.lng) {
+        markers.push({
+          lat: holeFeatures.lat,
+          lng: holeFeatures.lng,
+          color: '#ffffff',
+        });
+      }
+      if (holeFeatures.front_lat && holeFeatures.front_lng) {
+        markers.push({
+          lat: holeFeatures.front_lat,
+          lng: holeFeatures.front_lng,
+          color: '#ef4444',
+        });
+      }
+      if (holeFeatures.back_lat && holeFeatures.back_lng) {
+        markers.push({
+          lat: holeFeatures.back_lat,
+          lng: holeFeatures.back_lng,
+          color: '#3b82f6',
+        });
+      }
     }
 
     return markers;
   });
 
-  const currentHole = createMemo(() => {
-    return course()?.holeDefinitions.find(
-      (h) => h.holeNumber === selectedHoleNum(),
-    );
+  // Convert unified features to GeoJSON for map rendering
+  const mapEditorFeatures = createMemo((): GeoJSON.FeatureCollection => {
+    const hole = currentHole();
+    if (!hole?.features) {
+      return { type: 'FeatureCollection', features: [] };
+    }
+
+    return featuresToGeoJSON(hole.features);
+  });
+
+  // Get current trajectory feature for map
+  const currentTrajectory = createMemo(() => {
+    const hole = currentHole();
+
+    return hole?.features?.trajectory || null;
   });
 
   const handlePlaceSelect = (place: {
@@ -275,81 +294,179 @@ export default function CourseBuilder() {
 
   const updateHole = (holeNum: number, data: Partial<Hole>) => {
     if (!course()) return;
-    const holes = course()!.holeDefinitions.map((h) =>
-      h.holeNumber === holeNum ? { ...h, ...data } : h,
-    );
+    const holes = course()!.holeDefinitions.map((h) => {
+      if (h.holeNumber === holeNum) {
+        const updated = { ...h, ...data };
+        // Keep features and features in sync
+        if (data.features) {
+          updated.features = data.features;
+          updated.features = data.features;
+        }
+        return updated;
+      }
+      return h;
+    });
     setCourse({ ...course()!, holeDefinitions: holes });
 
     if (course()!.id) {
-      CourseStore.updateHole(course()!.id!, holeNum, data as any).catch((e) =>
-        console.warn('Failed to persist hole update:', e),
+      // Prepare data for persistence - include features if features changed
+      const persistData = data.features
+        ? { ...data, features: data.features }
+        : data;
+
+      CourseStore.updateHole(course()!.id!, holeNum, persistData as any).catch(
+        (e) => console.warn('Failed to persist hole update:', e),
       );
     }
   };
 
-  const handleFeatureCreate = async (feature: GeoJSON.Feature) => {
+  // UNIFIED FEATURE MANAGEMENT FUNCTIONS
+  const createHoleFeature = (
+    holeNum: number,
+    type: FeatureType,
+    geometry: GeoJSON.Geometry,
+    properties: any = {},
+  ) => {
     const hole = currentHole();
-    if (!hole) return;
+    if (!hole || !hole.features) return null;
 
-    const currentGeo = hole.geo_features || {
-      type: 'FeatureCollection',
-      features: [],
+    const feature = createFeature(type, geometry, properties);
+    const updatedFeatures: UnifiedHoleFeatures = {
+      greens: [...hole.features.greens],
+      trajectory: hole.features.trajectory,
+      teeBoxes: [...hole.features.teeBoxes],
+      slopes: [...hole.features.slopes],
+      hazards: [...hole.features.hazards],
     };
-    const type = (feature.properties as any)?.type || 'green';
-    const newFeature = {
-      ...feature,
-      properties: {
-        ...(feature.properties || {}),
+
+    if (type === 'trajectory') {
+      updatedFeatures.trajectory = feature as any;
+    } else {
+      const collectionName = getCollectionName(
         type,
-        hole: hole.holeNumber,
-      },
+      ) as keyof UnifiedHoleFeatures;
+      if (Array.isArray(updatedFeatures[collectionName])) {
+        (updatedFeatures[collectionName] as any[]).push(feature);
+      }
+    }
+
+    updateHole(holeNum, { features: updatedFeatures });
+    return feature;
+  };
+
+  const updateHoleFeature = (
+    holeNum: number,
+    featureId: string,
+    updates: { geometry?: GeoJSON.Geometry; properties?: any },
+  ) => {
+    const hole = currentHole();
+    if (!hole || !hole.features) return;
+
+    const { type } = parseFeatureId(featureId);
+    const updatedFeatures: UnifiedHoleFeatures = {
+      greens: [...hole.features.greens],
+      trajectory: hole.features.trajectory,
+      teeBoxes: [...hole.features.teeBoxes],
+      slopes: [...hole.features.slopes],
+      hazards: [...hole.features.hazards],
     };
-    const newGeo = {
-      ...currentGeo,
-      features: [...(currentGeo.features || []), newFeature],
+
+    if (type === 'trajectory' && updatedFeatures.trajectory?.id === featureId) {
+      updatedFeatures.trajectory = updateFeature(
+        updatedFeatures.trajectory,
+        updates,
+      );
+    } else {
+      const collectionName = getCollectionName(
+        type,
+      ) as keyof UnifiedHoleFeatures;
+      const collection = updatedFeatures[collectionName];
+      if (Array.isArray(collection)) {
+        const index = collection.findIndex((f) => f.id === featureId);
+        if (index !== -1) {
+          collection[index] = updateFeature(collection[index], updates);
+        }
+      }
+    }
+
+    updateHole(holeNum, { features: updatedFeatures });
+  };
+
+  const deleteHoleFeature = (holeNum: number, featureId: string) => {
+    const hole = currentHole();
+    if (!hole || !hole.features) return;
+
+    const { type } = parseFeatureId(featureId);
+    const updatedFeatures: UnifiedHoleFeatures = {
+      greens: [...hole.features.greens],
+      trajectory: hole.features.trajectory,
+      teeBoxes: [...hole.features.teeBoxes],
+      slopes: [...hole.features.slopes],
+      hazards: [...hole.features.hazards],
     };
-    updateHole(selectedHoleNum(), { geo_features: newGeo });
+
+    if (type === 'trajectory') {
+      updatedFeatures.trajectory = null;
+    } else {
+      const collectionName = getCollectionName(
+        type,
+      ) as keyof UnifiedHoleFeatures;
+      const collection = updatedFeatures[collectionName];
+      if (Array.isArray(collection)) {
+        const filtered = collection.filter((f) => f.id !== featureId);
+        (updatedFeatures[collectionName] as any) = filtered;
+      }
+    }
+
+    updateHole(holeNum, { features: updatedFeatures });
+  };
+
+  // UNIFIED EVENT HANDLERS
+  const handleFeatureCreate = async (
+    type: FeatureType,
+    geometry: GeoJSON.Geometry,
+    properties: any = {},
+  ) => {
+    createHoleFeature(selectedHoleNum(), type, geometry, properties);
     setMapMode('view');
   };
 
-  const handleFeatureUpdate = async (feature: GeoJSON.Feature) => {
-    const hole = currentHole();
-    if (!hole) return;
-    const currentGeo = hole.geo_features || {
-      type: 'FeatureCollection',
-      features: [],
-    };
-
-    const incomingId = (feature.properties as any)?.id;
-    if (!incomingId) {
-      const newGeo = {
-        ...currentGeo,
-        features: [...(currentGeo.features || []), feature],
-      };
-      updateHole(selectedHoleNum(), { geo_features: newGeo });
-      return;
-    }
-    const updatedFeatures = (currentGeo.features || []).map((f: any) =>
-      (f.properties as any)?.id === incomingId ? feature : f,
-    );
-    const newGeo = { ...currentGeo, features: updatedFeatures };
-    updateHole(selectedHoleNum(), { geo_features: newGeo });
+  const handleFeatureUpdate = async (
+    featureId: string,
+    updates: { geometry?: GeoJSON.Geometry; properties?: any },
+  ) => {
+    console.log(featureId, updates)
+    // updateHoleFeature(selectedHoleNum(), featureId, updates);
   };
 
   const handleFeatureDelete = (featureId: string) => {
-    const hole = currentHole();
-    if (!hole) return;
-    const currentGeo = hole.geo_features;
-    if (!currentGeo?.features) return;
-
-    const updatedFeatures = currentGeo.features.filter(
-      (f: any) => (f.properties as any)?.id !== featureId,
-    );
-
-    const newGeo = { ...currentGeo, features: updatedFeatures };
-    updateHole(selectedHoleNum(), { geo_features: newGeo });
-    setMapMode('view');
+    deleteHoleFeature(selectedHoleNum(), featureId);
   };
+
+  // LEGACY HANDLERS (for backward compatibility with MapEditor)
+  const handleLegacyFeatureCreate = async (feature: GeoJSON.Feature) => {
+    const type = (feature.properties?.type as FeatureType) || 'green';
+    await handleFeatureCreate(type, feature.geometry, feature.properties);
+  };
+
+  const handleLegacyFeatureUpdate = async (feature: GeoJSON.Feature) => {
+    if (feature.id) {
+      await handleFeatureUpdate(feature.id as string, {
+        geometry: feature.geometry,
+        properties: feature.properties,
+      });
+    }
+  };
+
+  // Effect to track hole changes for debugging
+  createEffect(() => {
+    const hole = currentHole();
+    const features = mapEditorFeatures();
+    // Track when holes change for feature redrawing
+    if (hole) {
+      console.log(`Switched to hole ${hole.holeNumber} with ${features.features.length} features`);
+    }
+  });
 
   const handlePublish = async () => {
     if (!confirm('Finish and publish this course? This cannot be undone.')) {
@@ -385,7 +502,8 @@ export default function CourseBuilder() {
                 mode={mapMode}
                 onLocationPick={() => null}
                 center={[initForm().lng, initForm().lat]}
-                initialGeoJSON={null}
+                features={{ type: 'FeatureCollection', features: [] }}
+                trajectory={null}
                 markers={() => [
                   { lat: initForm().lat, lng: initForm().lng, label: 'C' },
                 ]}
@@ -450,6 +568,16 @@ export default function CourseBuilder() {
 
               <div class="flex-1 flex overflow-hidden">
                 <div class="w-80 bg-slate-900 border-r border-slate-800 flex flex-col z-10 shadow-xl">
+                  <div class="p-4 flex justify-between items-start">
+                    <div>
+                      <h2 class="text-2xl font-black text-white mb-1">
+                        Hole {selectedHoleNum()}
+                      </h2>
+                      <span class="text-slate-500 text-sm">
+                        Edit details and map features
+                      </span>
+                    </div>
+                  </div>
                   <div class="p-4 grid grid-cols-6 gap-2">
                     <For each={c().holeDefinitions}>
                       {(hole) => (
@@ -461,7 +589,7 @@ export default function CourseBuilder() {
                             setMapMode('view');
                           }}
                           class={`aspect-square rounded-lg font-bold text-sm flex items-center justify-center transition-all ${
-                            selectedHoleNum() === hole.handicap
+                            selectedHoleNum() === hole.holeNumber
                               ? 'bg-emerald-500 text-white ring-2 ring-emerald-300 ring-offset-2 ring-offset-slate-900'
                               : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
                           }`}
@@ -471,19 +599,34 @@ export default function CourseBuilder() {
                       )}
                     </For>
                   </div>
+                </div>
 
-                  <div class="flex-1 p-6 space-y-6 overflow-y-auto border-t border-slate-800">
-                    <div class="flex justify-between items-start">
-                      <div>
-                        <h2 class="text-2xl font-black text-white mb-1">
-                          Hole {selectedHoleNum()}
-                        </h2>
-                        <span class="text-slate-500 text-sm">
-                          Edit details and map features
-                        </span>
-                      </div>
-                    </div>
+                <div class="flex-1 relative bg-black">
+                  <MapEditor
+                    zoom={16}
+                    mode={mapMode}
+                    drawMode={drawTool}
+                    center={
+                      currentHole()?.lat && currentHole()?.lng
+                        ? [currentHole()!.lng!, currentHole()!.lat!]
+                        : [course()!.lng, course()!.lat]
+                    }
+                    trajectory={currentTrajectory()}
+                    markers={mapMarkers}
+                    features={mapEditorFeatures()}
+                    onLocationPick={handleLocationPick}
+                    onFeatureCreate={handleFeatureCreate}
+                    onFeatureUpdate={handleFeatureUpdate}
+                    onFeatureDelete={handleFeatureDelete}
+                    onDrawCreate={handleLegacyFeatureCreate}
+                    onDrawUpdate={handleLegacyFeatureUpdate}
+                    onEditModeExit={() => {}}
+                    onEditModeEnter={() => {}}
+                  />
+                </div>
 
+                <div class="w-80 bg-slate-900 border-l border-slate-800 flex flex-col z-10 shadow-xl">
+                  <div class="flex-1 p-6 space-y-6 overflow-y-auto">
                     <div class="space-y-4">
                       <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -665,28 +808,55 @@ export default function CourseBuilder() {
                               </div>
 
                               <div class="flex items-center gap-2">
-                                <input
-                                  class="input-field w-20 text-sm py-1"
-                                  placeholder="Yds"
-                                  value={teeBox.yardage}
-                                  onChange={(e) => {
-                                    const boxes = [
-                                      ...(currentHole()?.tee_boxes || []),
-                                    ];
+                                <div class="flex items-center gap-1">
+                                  <input
+                                    class="input-field w-20 text-sm py-1"
+                                    placeholder="Yds"
+                                    value={teeBox.yardage}
+                                    onChange={(e) => {
+                                      const boxes = [
+                                        ...(currentHole()?.tee_boxes || []),
+                                      ];
 
-                                    if (!RegExp('^[0-9]+$').test) {
-                                      return;
+                                      if (!RegExp('^[0-9]+$').test) {
+                                        return;
+                                      }
+
+                                      boxes[i()] = {
+                                        ...(boxes[i()] || {}),
+                                        yardage: parseInt(
+                                          e.currentTarget.value,
+                                        ),
+                                      };
+                                      updateHole(selectedHoleNum(), {
+                                        tee_boxes: boxes,
+                                      });
+                                    }}
+                                  />
+                                  {(() => {
+                                    const hole = currentHole();
+                                    if (
+                                      hole?.trajectory &&
+                                      teeBox.lat &&
+                                      teeBox.lng &&
+                                      hole?.lat &&
+                                      hole?.lng
+                                    ) {
+                                      return (
+                                        <span class="text-xs text-blue-400">
+                                          (
+                                          {calculateTeeToGreenDistance(
+                                            [teeBox.lng, teeBox.lat],
+                                            [hole.lng, hole.lat],
+                                            hole.trajectory,
+                                          )}{' '}
+                                          yds)
+                                        </span>
+                                      );
                                     }
-
-                                    boxes[i()] = {
-                                      ...(boxes[i()] || {}),
-                                      yardage: parseInt(e.currentTarget.value),
-                                    };
-                                    updateHole(selectedHoleNum(), {
-                                      tee_boxes: boxes,
-                                    });
-                                  }}
-                                />
+                                    return null;
+                                  })()}
+                                </div>
                                 <button
                                   onClick={() => {
                                     setPickContext({
@@ -722,80 +892,49 @@ export default function CourseBuilder() {
                             setMapMode('draw');
                             setDrawTool('polygon');
                           }}
-                          class={`w-full py-3 px-4 rounded-xl flex items-center justify-between transition-all ${mapMode() === 'draw' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                          class={`w-full py-3 px-4 rounded-xl flex items-center justify-between transition-all ${mapMode() === 'draw' && drawTool() === 'polygon' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
                         >
                           <span class="font-bold text-sm">
                             Draw Green Shape
                           </span>
                           <div
-                            class={`w-3 h-3 rounded-full ${currentHole()?.geo_features?.features?.length ? 'bg-emerald-400' : 'bg-slate-600'}`}
+                            class={`w-3 h-3 rounded-full ${currentHole()?.features?.greens?.length ? 'bg-emerald-400' : 'bg-slate-600'}`}
                           />
                         </button>
-                        {/* <div class="grid grid-cols-2 gap-2">
+
                         <button
                           onClick={() => {
-                            setDrawTool('polygon');
-                            setMapMode('draw');
+                            const trajectory =
+                              currentHole()?.features?.trajectory;
+                            if (trajectory && mapMode() !== 'draw') {
+                              // If trajectory exists and not in draw mode, delete it
+                              if (confirm('Delete the existing trajectory?')) {
+                                deleteHoleFeature(
+                                  selectedHoleNum(),
+                                  trajectory.id,
+                                );
+                              }
+                            } else {
+                              // Otherwise, enter draw mode to create/edit trajectory
+                              setMapMode('draw');
+                              setDrawTool('trajectory');
+                            }
                           }}
-                          class={`py-3 px-4 rounded-xl flex items-center justify-center transition-all ${mapMode() === 'draw' && drawTool() === 'polygon' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                          class={`w-full py-3 px-4 rounded-xl flex items-center justify-between transition-all ${mapMode() === 'draw' && drawTool() === 'trajectory' ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : currentHole()?.features?.trajectory ? 'bg-slate-800 hover:bg-red-900/50 text-slate-300' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
                         >
-                          <span class="font-bold text-xs">Draw Polygon</span>
+                          <span class="font-bold text-sm">
+                            {currentHole()?.features?.trajectory &&
+                            mapMode() !== 'draw'
+                              ? 'Delete Trajectory'
+                              : 'Draw Hole Trajectory'}
+                          </span>
+                          <div
+                            class={`w-3 h-3 rounded-full ${currentHole()?.features?.trajectory ? 'bg-blue-400' : 'bg-slate-600'}`}
+                          />
                         </button>
-                        <button
-                          onClick={() => {
-                            setDrawTool('circle');
-                            setMapMode('draw');
-                          }}
-                          class={`py-3 px-4 rounded-xl flex items-center justify-center transition-all ${mapMode() === 'draw' && drawTool() === 'circle' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
-                        >
-                          <span class="font-bold text-xs">Draw Circle</span>
-                        </button>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setDrawTool('slope');
-                          setMapMode('draw');
-                        }}
-                        class={`w-full py-3 px-4 rounded-xl flex items-center justify-center transition-all ${mapMode() === 'draw' && drawTool() === 'slope' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
-                      >
-                        <span class="font-bold text-sm">Add Slope Point</span>
-                      </button> */}
                       </div>
                     </div>
                   </div>
-                </div>
-
-                <div class="flex-1 relative bg-black">
-                  <MapEditor
-                    zoom={16}
-                    mode={mapMode}
-                    drawMode={drawTool}
-                    center={
-                      currentHole()?.lat && currentHole()?.lng
-                        ? [currentHole()!.lng!, currentHole()!.lat!]
-                        : [course()!.lng, course()!.lat]
-                    }
-                    markers={mapMarkers}
-                    initialGeoJSON={{
-                      type: 'FeatureCollection',
-                      features: (course()!.holeDefinitions || [])
-                        .flatMap((h) => h.geo_features?.features || [])
-                        .map((f: any) => {
-                          if (!f.properties) f.properties = {};
-                          if (!f.properties.id)
-                            f.properties.id =
-                              f.properties.id ??
-                              `green-${Math.random().toString(36).slice(2, 9)}`;
-                          return f;
-                        }),
-                    }}
-                    onLocationPick={handleLocationPick}
-                    onDrawCreate={handleFeatureCreate}
-                    onDrawUpdate={handleFeatureUpdate}
-                    onDrawDelete={handleFeatureDelete}
-                    onEditModeExit={() => {}}
-                    onEditModeEnter={() => {}}
-                  />
                 </div>
               </div>
             </>
