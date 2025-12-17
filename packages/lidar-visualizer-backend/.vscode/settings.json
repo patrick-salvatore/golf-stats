@@ -1,0 +1,16 @@
+{
+    "python.defaultInterpreter": "./.venv/bin/python",
+    "python.pythonPath": "./.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.extraPaths": [
+        "./src"
+    ],
+    "pylint.args": [
+        "--init-hook=import sys; sys.path.append('./src')"
+    ]
+}

@@ -1,11 +1,42 @@
 {
-  "name": "golf-stats",
+  "name": "golf-stats-monorepo",
   "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "install:all": "cd client && pnpm install && cd ../server && mix deps.get",
-    "install:client": "cd client && pnpm install",
-    "dev:client": "cd client && pnpm run dev",
-    "dev:server": "cd server && mix phx.server",
-    "dev": "pnpm run dev:server & pnpm run dev:client"
+    "install:all": "pnpm install",
+    "build:all": "pnpm -r run build",
+    "dev:all": "pnpm -r --parallel run dev",
+    
+    "golf:install": "pnpm --filter golf-stats-client install && cd packages/golf-stats-server && mix deps.get",
+    "golf:dev:client": "pnpm --filter golf-stats-client run dev",
+    "golf:dev:server": "cd packages/golf-stats-server && mix phx.server",
+    "golf:dev": "npm run golf:dev:server & npm run golf:dev:client",
+    "golf:build": "pnpm --filter golf-stats-client run build",
+
+    "lidar:install": "cd packages/lidar-visualizer-backend && uv sync && pnpm --filter lidar-visualizer-frontend install",
+    "lidar:install:backend": "cd packages/lidar-visualizer-backend && uv sync",
+    "lidar:install:frontend": "pnpm --filter lidar-visualizer-frontend install",
+    "lidar:dev:backend": "cd packages/lidar-visualizer-backend && uv run python run_server.py",
+    "lidar:dev:frontend": "pnpm --filter lidar-visualizer-frontend run dev",
+    "lidar:dev": "npm run lidar:dev:backend & npm run lidar:dev:frontend",
+    "lidar:build": "pnpm --filter lidar-visualizer-frontend run build",
+    "lidar:test:backend": "cd packages/lidar-visualizer-backend && uv run python -c \"from src.lidar_api.main import app; print('✅ Backend imports successfully')\"",
+    "lidar:test:frontend": "pnpm --filter lidar-visualizer-frontend run build",
+    "lidar:test:opentopography": "cd packages/lidar-visualizer-backend && uv run python -c \"from src.lidar_api.services.opentopography import OpenTopographyClient; print('✅ OpenTopography client loads successfully')\"",
+    "lidar:test": "npm run lidar:test:backend && npm run lidar:test:frontend && npm run lidar:test:opentopography && echo '✅ All tests passed'",
+    "lidar:add:backend": "cd packages/lidar-visualizer-backend && uv add",
+    "lidar:add:frontend": "pnpm --filter lidar-visualizer-frontend add",
+    "lidar:add:backend:dev": "cd packages/lidar-visualizer-backend && uv add --group dev",
+    "lidar:add:frontend:dev": "pnpm --filter lidar-visualizer-frontend add -D",
+    "lidar:help:add": "echo '📦 Package Management Commands:' && echo '' && echo 'LiDAR Backend (Python/UV):' && echo '  npm run lidar:add:backend <package>     # Add production dependency' && echo '  npm run lidar:add:backend:dev <package> # Add dev dependency' && echo '' && echo 'LiDAR Frontend (pnpm workspace):' && echo '  npm run lidar:add:frontend <package>     # Add production dependency' && echo '  npm run lidar:add:frontend:dev <package> # Add dev dependency' && echo '' && echo 'Golf Stats (pnpm workspace):' && echo '  pnpm --filter golf-stats-client add <package>' && echo '' && echo 'Examples:' && echo '  npm run lidar:add:backend redis' && echo '  npm run lidar:add:frontend lodash' && echo '  pnpm --filter golf-stats-client add react-router-dom'",
+    "lidar:clean": "rm -rf packages/lidar-visualizer-backend/.venv packages/lidar-visualizer-frontend/node_modules packages/lidar-visualizer-frontend/dist",
+    "lidar:status": "echo '🔥 LiDAR Visualizer Status (Three.js r182 + router + pnpm):' && echo 'Home Page: http://localhost:3000' && echo 'Upload Page: http://localhost:3000/upload' && echo 'Backend API: http://127.0.0.1:8000' && echo 'API Docs: http://127.0.0.1:8000/docs' && echo 'Debug LAZ: http://127.0.0.1:8000/api/v1/debug/laz-support'",
+    
+    "clean:all": "pnpm -r run clean || true && rm -rf node_modules packages/*/node_modules packages/*/.venv",
+    "status:all": "echo '📊 All Services Status:' && echo 'Golf Stats Client: http://localhost:3000' && echo 'Golf Stats Server: http://localhost:4000' && echo 'LiDAR Frontend: http://localhost:3000' && echo 'LiDAR Backend: http://127.0.0.1:8000'"
   }
 }
