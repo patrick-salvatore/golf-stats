@@ -70,6 +70,7 @@ export interface MapEditorProps {
   onFeatureDelete?: (featureId: string) => void;
   onEditModeEnter?: () => void;
   onEditModeExit?: () => void;
+  onEscape?: () => void;
 
   // DEPRECATED: Legacy callbacks for backward compatibility
   initialGeoJSON?: GeoJSON.FeatureCollection | null; // For backward compatibility
@@ -384,6 +385,8 @@ export default function MapEditor(props: MapEditorProps): JSX.Element {
             mgr.changeMode('simple_select');
             props.onEditModeExit?.();
           }
+          
+          props.onEscape?.();
         },
         onEnter: () => {
           if (internalMode() === 'draw' && props.drawMode?.() === 'circle') {

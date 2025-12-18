@@ -59,7 +59,7 @@ const ensureHoles = (c: LocalCourse): LocalCourse => {
 export default function CourseCreator() {
   const navigate = useNavigate();
   const params = useParams();
-  
+
   // Ref for MapEditor to trigger undo state saves
   let mapEditorRef: MapEditorRef | null = null;
 
@@ -252,15 +252,26 @@ export default function CourseCreator() {
   };
 
   // Restore hole state from undo/redo
-  const handleHoleStateRestore = async (_features: GeoJSON.FeatureCollection, metadata: HoleMetadata) => {
+  const handleHoleStateRestore = async (
+    _features: GeoJSON.FeatureCollection,
+    metadata: HoleMetadata,
+  ) => {
     // Update hole with restored metadata (features are restored by drawing manager)
-    await courseCreatorActions.updateHole(courseCreatorState.selectedHoleNum, metadata);
+    await courseCreatorActions.updateHole(
+      courseCreatorState.selectedHoleNum,
+      metadata,
+    );
   };
 
   // Enhanced updateHole that saves undo state for metadata changes
-  const updateHoleWithUndoSave = async (holeNum: number, data: Partial<Hole>) => {
+  const updateHoleWithUndoSave = async (
+    holeNum: number,
+    data: Partial<Hole>,
+  ) => {
     // Save current state before making changes (for non-feature changes)
-    const hasNonFeatureChanges = Object.keys(data).some(key => key !== 'features');
+    const hasNonFeatureChanges = Object.keys(data).some(
+      (key) => key !== 'features',
+    );
     if (hasNonFeatureChanges && mapEditorRef) {
       await mapEditorRef.saveCurrentState();
     }
@@ -570,8 +581,9 @@ export default function CourseCreator() {
             <div class="flex-1 relative bg-black">
               <MapEditor
                 zoom={16}
-                mode={() => courseCreatorState.mapMode}
-                drawMode={() => courseCreatorState.drawTool}
+                ref={(ref) => {
+                  mapEditorRef = ref;
+                }}
                 center={
                   currentHole()?.lat && currentHole()?.lng
                     ? [currentHole()!.lng!, currentHole()!.lat!]
@@ -580,6 +592,8 @@ export default function CourseCreator() {
                         courseCreatorState.course!.lat,
                       ]
                 }
+                mode={() => courseCreatorState.mapMode}
+                drawMode={() => courseCreatorState.drawTool}
                 trajectory={currentTrajectory}
                 markers={mapMarkers}
                 features={mapEditorFeatures}
@@ -587,13 +601,16 @@ export default function CourseCreator() {
                 holeNumber={courseCreatorState.selectedHoleNum}
                 getCurrentHoleMetadata={getCurrentHoleMetadata}
                 onHoleStateRestore={handleHoleStateRestore}
-                ref={(ref) => { mapEditorRef = ref; }}
                 onLocationPick={handleLocationPick}
                 onFeatureCreate={handleFeatureCreate}
                 onFeatureUpdate={handleFeatureUpdate}
                 onFeatureDelete={handleFeatureDelete}
                 onEditModeExit={() => {}}
                 onEditModeEnter={() => {}}
+                onEscape={() => {
+                  courseCreatorActions.setPickContext(null);
+                  courseCreatorActions.setMapMode('view');
+                }}
               />
             </div>
 
@@ -609,14 +626,14 @@ export default function CourseCreator() {
                         min={3}
                         max={5}
                         value={currentHole()?.par}
-                            onInput={async (e) =>
-                              await updateHoleWithUndoSave(
-                                courseCreatorState.selectedHoleNum,
-                                {
-                                  par: parseInt(e.currentTarget.value),
-                                },
-                              )
-                            }
+                        onInput={async (e) =>
+                          await updateHoleWithUndoSave(
+                            courseCreatorState.selectedHoleNum,
+                            {
+                              par: parseInt(e.currentTarget.value),
+                            },
+                          )
+                        }
                       />
                     </div>
                     <div>
@@ -627,14 +644,14 @@ export default function CourseCreator() {
                         min={1}
                         max={18}
                         value={currentHole()?.handicap}
-                            onInput={async (e) =>
-                              await updateHoleWithUndoSave(
-                                courseCreatorState.selectedHoleNum,
-                                {
-                                  handicap: parseInt(e.currentTarget.value),
-                                },
-                              )
-                            }
+                        onInput={async (e) =>
+                          await updateHoleWithUndoSave(
+                            courseCreatorState.selectedHoleNum,
+                            {
+                              handicap: parseInt(e.currentTarget.value),
+                            },
+                          )
+                        }
                       />
                     </div>
                   </div>
@@ -719,23 +736,23 @@ export default function CourseCreator() {
                       Tee Boxes
                     </h3>
                     <button
-                          onClick={async () =>
-                            await updateHoleWithUndoSave(
-                              courseCreatorState.selectedHoleNum,
+                      onClick={async () =>
+                        await updateHoleWithUndoSave(
+                          courseCreatorState.selectedHoleNum,
+                          {
+                            tee_boxes: [
+                              ...(currentHole()?.tee_boxes || []),
                               {
-                                tee_boxes: [
-                                  ...(currentHole()?.tee_boxes || []),
-                                  {
-                                    name: '',
-                                    color: '#ffffff',
-                                    yardage: 0,
-                                    lat: 0,
-                                    lng: 0,
-                                  },
-                                ],
+                                name: '',
+                                color: '#ffffff',
+                                yardage: 0,
+                                lat: 0,
+                                lng: 0,
                               },
-                            )
-                          }
+                            ],
+                          },
+                        )
+                      }
                       class="text-xs bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 px-2 py-1 rounded font-bold transition-colors"
                     >
                       + Add
@@ -759,12 +776,12 @@ export default function CourseCreator() {
                                   ...(boxes[i()] || {}),
                                   color: e.currentTarget.value,
                                 };
-                                     await updateHoleWithUndoSave(
-                                       courseCreatorState.selectedHoleNum,
-                                       {
-                                         tee_boxes: boxes,
-                                       },
-                                     );
+                                await updateHoleWithUndoSave(
+                                  courseCreatorState.selectedHoleNum,
+                                  {
+                                    tee_boxes: boxes,
+                                  },
+                                );
                               }}
                             />
                             <input
@@ -779,12 +796,12 @@ export default function CourseCreator() {
                                   ...(boxes[i()] || {}),
                                   name: e.currentTarget.value,
                                 };
-                                     await updateHoleWithUndoSave(
-                                       courseCreatorState.selectedHoleNum,
-                                       {
-                                         tee_boxes: boxes,
-                                       },
-                                     );
+                                await updateHoleWithUndoSave(
+                                  courseCreatorState.selectedHoleNum,
+                                  {
+                                    tee_boxes: boxes,
+                                  },
+                                );
                               }}
                             />
                             <button
@@ -793,12 +810,12 @@ export default function CourseCreator() {
                                   ...(currentHole()?.tee_boxes || []),
                                 ];
                                 boxes.splice(i(), 1);
-                                     await updateHoleWithUndoSave(
-                                       courseCreatorState.selectedHoleNum,
-                                       {
-                                         tee_boxes: boxes,
-                                       },
-                                     );
+                                await updateHoleWithUndoSave(
+                                  courseCreatorState.selectedHoleNum,
+                                  {
+                                    tee_boxes: boxes,
+                                  },
+                                );
                               }}
                               class="text-slate-500 hover:text-red-400 p-1"
                             >

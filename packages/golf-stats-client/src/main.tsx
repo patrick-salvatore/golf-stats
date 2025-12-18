@@ -5,7 +5,7 @@ import { AppProvider } from './context/app_provider';
 import Header from './components/header';
 
 const Home = lazy(() => import('./pages/home'));
-const RoundTracker = lazy(() => import('./pages/round_tracker'));
+const RoundTracker = lazy(() => import('./pages/round_tracker/round_tracker'));
 const History = lazy(() => import('./pages/history'));
 const Dashboard = lazy(() => import('./pages/dashboard'));
 const Bag = lazy(() => import('./pages/bag'));

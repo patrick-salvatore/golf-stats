@@ -32,8 +32,6 @@
     "lidar:add:frontend": "pnpm --filter lidar-visualizer-frontend add",
     "lidar:add:backend:dev": "cd packages/lidar-visualizer-backend && uv add --group dev",
     "lidar:add:frontend:dev": "pnpm --filter lidar-visualizer-frontend add -D",
-    "lidar:help:add": "echo '📦 Package Management Commands:' && echo '' && echo 'LiDAR Backend (Python/UV):' && echo '  npm run lidar:add:backend <package>     # Add production dependency' && echo '  npm run lidar:add:backend:dev <package> # Add dev dependency' && echo '' && echo 'LiDAR Frontend (pnpm workspace):' && echo '  npm run lidar:add:frontend <package>     # Add production dependency' && echo '  npm run lidar:add:frontend:dev <package> # Add dev dependency' && echo '' && echo 'Golf Stats (pnpm workspace):' && echo '  pnpm --filter golf-stats-client add <package>' && echo '' && echo 'Examples:' && echo '  npm run lidar:add:backend redis' && echo '  npm run lidar:add:frontend lodash' && echo '  pnpm --filter golf-stats-client add react-router-dom'",
-    "lidar:clean": "rm -rf packages/lidar-visualizer-backend/.venv packages/lidar-visualizer-frontend/node_modules packages/lidar-visualizer-frontend/dist",
     "lidar:status": "echo '🔥 LiDAR Visualizer Status (Three.js r182 + router + pnpm):' && echo 'Home Page: http://localhost:3000' && echo 'Upload Page: http://localhost:3000/upload' && echo 'Backend API: http://127.0.0.1:8000' && echo 'API Docs: http://127.0.0.1:8000/docs' && echo 'Debug LAZ: http://127.0.0.1:8000/api/v1/debug/laz-support'",
     
     "clean:all": "pnpm -r run clean || true && rm -rf node_modules packages/*/node_modules packages/*/.venv",

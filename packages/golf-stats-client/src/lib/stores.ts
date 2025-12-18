@@ -95,7 +95,8 @@ export type ServerHoleDefinition = {
 };
 
 function isOnline(): boolean {
-  return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  return false
+  // return typeof navigator !== 'undefined' ? navigator.onLine : true;
 }
 
 function generateTempId(): number {
@@ -849,58 +850,58 @@ export const CourseStore = {
     };
     const id = await db.courses.add(newCourse);
 
-    // await addToSyncQueue('course', id as number, 'create', {
-    //   ...newCourse,
-    //   id,
-    // });
+    await addToSyncQueue('course', id as number, 'create', {
+      ...newCourse,
+      id,
+    });
 
-    // if (isOnline()) {
-    //   try {
-    //     const holeDefs = await db.hole_definitions
-    //       .where('courseId')
-    //       .equals(id as number)
-    //       .toArray();
-    //     const payload = {
-    //       name: newCourse.name,
-    //       city: newCourse.city,
-    //       state: newCourse.state,
-    //       lat: newCourse.lat,
-    //       lng: newCourse.lng,
-    //       hole_definitions: holeDefs.map((hd) => ({
-    //         hole_number: hd.holeNumber,
-    //         par: hd.par,
-    //         yardage: (hd as any).yardage,
-    //         handicap: hd.handicap,
-    //         lat: hd.lat,
-    //         lng: hd.lng,
-    //         hazards: hd.hazards,
-    //         geo_features: hd.geo_features,
-    //       })),
-    //     };
+    if (isOnline()) {
+      try {
+        const holeDefs = await db.hole_definitions
+          .where('courseId')
+          .equals(id as number)
+          .toArray();
+        const payload = {
+          name: newCourse.name,
+          city: newCourse.city,
+          state: newCourse.state,
+          lat: newCourse.lat,
+          lng: newCourse.lng,
+          hole_definitions: holeDefs.map((hd) => ({
+            hole_number: hd.holeNumber,
+            par: hd.par,
+            yardage: (hd as any).yardage,
+            handicap: hd.handicap,
+            lat: hd.lat,
+            lng: hd.lng,
+            hazards: hd.hazards,
+            geo_features: hd.geo_features,
+          })),
+        };
 
-    //     const serverCourse = await courseApi.createCourse(payload);
-    //     await db.courses.update(id as number, {
-    //       serverId: serverCourse.id,
-    //       syncStatus: SyncStatus.SYNCED,
-    //     });
+        const serverCourse = await courseApi.createCourse(payload);
+        await db.courses.update(id as number, {
+          serverId: serverCourse.id,
+          syncStatus: SyncStatus.SYNCED,
+        });
 
-    //     const qi = await db.syncQueue
-    //       .where('entity')
-    //       .equals('course')
-    //       .and((q) => q.entityId === id)
-    //       .first();
-    //     if (qi?.id) await removeFromSyncQueue(qi.id);
+        const qi = await db.syncQueue
+          .where('entity')
+          .equals('course')
+          .and((q) => q.entityId === id)
+          .first();
+        if (qi?.id) await removeFromSyncQueue(qi.id);
 
-    //     return {
-    //       ...(newCourse as LocalCourse),
-    //       id,
-    //       serverId: serverCourse.id,
-    //       syncStatus: SyncStatus.SYNCED,
-    //     };
-    //   } catch (err) {
-    //     console.error('Failed to sync course create:', err);
-    //   }
-    // }
+        return {
+          ...(newCourse as LocalCourse),
+          id,
+          serverId: serverCourse.id,
+          syncStatus: SyncStatus.SYNCED,
+        };
+      } catch (err) {
+        console.error('Failed to sync course create:', err);
+      }
+    }
 
     return { ...(newCourse as LocalCourse), id } as LocalCourse;
   },
